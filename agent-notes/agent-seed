@@ -1,0 +1,17 @@
+# Header
+Directory: agent-notes/
+Modified: 2026-04-08
+Description: Original project seed request that defines the baseline scope and requirements.
+Uses: none
+Used by: agent-notes/project-overview-for-agent.md, agent-notes/architecture-rules-and-patterns.md
+
+# Seed Content
+Build a complete home LED control system with these exact pieces:
+Raspberry Pi runs a Go backend using SQLite for storage. It also runs Mosquitto MQTT broker.
+Pico W clients run MicroPython. Each Pico publishes its full status JSON every 8 seconds to the single topic devices/status/{its-mac-address}. That same message acts as both announcement and status update.
+Backend subscribes to devices/status/#. On first sighting of a MAC, it auto-adds the device to SQLite with default name and room.
+React + Ant Design frontend served by the Go backend. Pages: Device list, Rooms, individual device controls. User can rename devices, assign to rooms, set color/brightness/power.
+Commands sent from frontend to devices/cmd/{mac} at QoS 1. Picos subscribe to their own command topic and update their LEDs accordingly.
+All MQTT communication uses QoS 1. No OTA. Keep Pico code as simple as possible.
+Generate the full folder structure with Go backend, React frontend, MicroPython client code, SQLite schema, and clear setup instructions for the Raspberry Pi.
+The application should come with a built and teardown shell script that installs the requisite dependencies, creates the relevant users and permissions, moves the requisite nginx and systemd files over to the apropriate plaes, moves the executables to the right places, etc.

@@ -1,0 +1,20 @@
+[Unit]
+Description=IoT Hub LED Backend
+After=network.target mosquitto.service
+Requires=mosquitto.service
+
+[Service]
+Type=simple
+User=iotled
+Group=iotled
+WorkingDirectory=/opt/iot-hub/backend
+Environment=IOTHUB_DB_PATH=/var/lib/iot-hub/iothub.db
+Environment=IOTHUB_HTTP_ADDR=127.0.0.1:8080
+Environment=IOTHUB_MQTT_BROKER=tcp://127.0.0.1:1883
+Environment=IOTHUB_STATIC_DIR=/opt/iot-hub/frontend/dist
+ExecStart=/usr/local/bin/iot-hub-backend
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
