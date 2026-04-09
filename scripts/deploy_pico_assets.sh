@@ -23,4 +23,12 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 run_root mkdir -p /opt/iot-hub/pico
 run_root rsync -a --delete "$ROOT_DIR/pico/" /opt/iot-hub/pico/
 
+UF2_SOURCE="$(find "$ROOT_DIR/pico" -maxdepth 1 -type f -name '*.uf2' | head -n 1)"
+if [[ -n "$UF2_SOURCE" ]]; then
+  run_root cp "$UF2_SOURCE" /opt/iot-hub/pico-rp2.uf2
+  echo "UF2 copied to /opt/iot-hub/pico-rp2.uf2 from $(basename "$UF2_SOURCE")"
+else
+  echo "No UF2 found in $ROOT_DIR/pico; provisioning in BOOTSEL mode will fail until one is added."
+fi
+
 echo "Pico assets deployed to /opt/iot-hub/pico/"
