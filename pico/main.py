@@ -9,6 +9,7 @@ import time
 import json
 import ubinascii
 import sys
+import gc
 from machine import Pin
 import neopixel
 from umqtt.simple import MQTTClient
@@ -126,36 +127,58 @@ def main():
     log("Status topic: " + status_topic.decode())
     log("Command topic: " + cmd_topic.decode())
 
-    client = MQTTClient(client_id=mac, server=MQTT_BROKER, port=MQTT_PORT)
-    client.set_callback(on_message)
+    brokers = [MQTT_BROKER]
+    if MQTT_BROKER.endswith(".local"):
+        short_host = MQTT_BROKER[:-6]
+        if short_host:
+            brokers.append(short_host)
+
+    client = None
     connected = False
     attempts = 0
     while not connected:
         attempts += 1
-        try:
-            log("Connecting MQTT attempt " + str(attempts))
-            client.connect(clean_session=True)
-            connected = True
-        except Exception as e:
-            print("[pico] mqtt connect error", e)
+        for broker in brokers:
+            try:
+                log("Connecting MQTT attempt " + str(attempts) + " broker=" + broker)
+                client = MQTTClient(client_id=mac, server=broker, port=MQTT_PORT)
+                client.set_callback(on_message)
+                client.connect(clean_session=True)
+                connected = True
+                log("Connected to MQTT broker=" + broker)
+                break
+            except Exception as e:
+                print("[pico] mqtt connect error", e)
+                client = None
+                gc.collect()
+        if not connected:
             time.sleep(2)
+
+    if client is None:
+        raise RuntimeError("MQTT client unavailable after connect loop")
+
     client.subscribe(cmd_topic, qos=1)
     log("Subscribed to command topic (QoS 1)")
 
     apply_led()
 
     publish_count = 0
+    publish_interval_ms = 8000
+    last_publish_ms = time.ticks_ms() - publish_interval_ms
     while True:
         try:
             client.check_msg()
-            payload = json.dumps(status)
-            client.publish(status_topic, payload, qos=1)
-            publish_count += 1
-            log("Published status #" + str(publish_count) + " " + payload)
+            now_ms = time.ticks_ms()
+            if time.ticks_diff(now_ms, last_publish_ms) >= publish_interval_ms:
+                payload = json.dumps(status)
+                client.publish(status_topic, payload, qos=0)
+                publish_count += 1
+                last_publish_ms = now_ms
+                log("Published status #" + str(publish_count) + " " + payload)
         except Exception as e:
             print("[pico] mqtt loop error", e)
             sys.print_exception(e)
-        time.sleep(8)
+        time.sleep_ms(25)
 
 
 main()
