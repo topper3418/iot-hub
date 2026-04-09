@@ -20,6 +20,7 @@ import (
 )
 
 const flashHelperPath = "/usr/local/bin/iot-hub-flash-uf2"
+const pushHelperPath = "/usr/local/bin/iot-hub-pico-push"
 
 type Options struct {
 	Status       Status
@@ -111,20 +112,43 @@ func Provision(opts Options) error {
 	}
 	defer cleanup()
 
-	emit(opts.Progress, "upload_main", "Uploading main.py")
-	if err := runMPRemoteWithRetry(opts.Progress, "upload_main", "upload main.py", serialPort, "fs", "cp", opts.MainPyPath, ":main.py"); err != nil {
-		return fmt.Errorf("failed to upload main.py: %w", err)
+	emit(opts.Progress, "upload_main", "Uploading files using manual-style helper")
+	if err := pushFilesViaHelper(opts.Progress, serialPort, opts.MainPyPath, cfgPath); err != nil {
+		emit(opts.Progress, "upload_main", "Helper upload failed, retrying direct mpremote path")
+		if err := runMPRemoteWithRetry(opts.Progress, "upload_main", "upload main.py", serialPort, "fs", "cp", opts.MainPyPath, ":main.py"); err != nil {
+			return fmt.Errorf("failed to upload main.py: %w", err)
+		}
+		emit(opts.Progress, "upload_config", "Uploading device_config.py")
+		if err := runMPRemoteWithRetry(opts.Progress, "upload_config", "upload device_config.py", serialPort, "fs", "cp", cfgPath, ":device_config.py"); err != nil {
+			return fmt.Errorf("failed to upload device_config.py: %w", err)
+		}
+		emit(opts.Progress, "reset", "Resetting Pico")
+		if err := runMPRemoteWithRetry(opts.Progress, "reset", "reset pico", serialPort, "reset"); err != nil {
+			return fmt.Errorf("uploaded files, but reset failed: %w", err)
+		}
+		emit(opts.Progress, "done", "Provisioning completed")
+		return nil
 	}
-	emit(opts.Progress, "upload_config", "Uploading device_config.py")
-	if err := runMPRemoteWithRetry(opts.Progress, "upload_config", "upload device_config.py", serialPort, "fs", "cp", cfgPath, ":device_config.py"); err != nil {
-		return fmt.Errorf("failed to upload device_config.py: %w", err)
-	}
-	emit(opts.Progress, "reset", "Resetting Pico")
-	if err := runMPRemoteWithRetry(opts.Progress, "reset", "reset pico", serialPort, "reset"); err != nil {
-		return fmt.Errorf("uploaded files, but reset failed: %w", err)
-	}
+
 	emit(opts.Progress, "done", "Provisioning completed")
 
+	return nil
+}
+
+func pushFilesViaHelper(progress func(stage, detail string), serialPort, mainPath, cfgPath string) error {
+	if _, err := os.Stat(pushHelperPath); err != nil {
+		return fmt.Errorf("push helper not found at %s", pushHelperPath)
+	}
+	portArg := serialPort
+	if strings.TrimSpace(portArg) == "" {
+		portArg = "auto"
+	}
+	emit(progress, "upload_main", "Invoking helper "+pushHelperPath)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	if err := run(ctx, pushHelperPath, portArg, mainPath, cfgPath); err != nil {
+		return fmt.Errorf("manual-style helper upload failed: %w", err)
+	}
 	return nil
 }
 

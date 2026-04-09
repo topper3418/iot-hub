@@ -27,6 +27,7 @@ run_root rm -f /etc/nginx/sites-enabled/iot-hub.conf
 run_root rm -f /etc/nginx/sites-available/iot-hub.conf
 run_root rm -f /usr/local/bin/iot-hub-backend
 run_root rm -f /usr/local/bin/iot-hub-flash-uf2
+run_root rm -f /usr/local/bin/iot-hub-pico-push
 run_root rm -f /etc/sudoers.d/iot-hub-flash-pico
 
 run_root rm -rf /opt/iot-hub /var/lib/iot-hub /var/log/iot-hub
