@@ -8,6 +8,8 @@ package app
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -32,6 +34,10 @@ type Application struct {
 	pico        *provision.Monitor
 	provisionMu sync.Mutex
 	provState   PicoProvisionState
+	seenMu      sync.Mutex
+	seenMACs    map[string]bool
+	ackMu       sync.Mutex
+	ackWaiters  map[string]chan string
 }
 
 type PicoProvisionState struct {
@@ -58,13 +64,16 @@ func New() (*Application, error) {
 		return nil, err
 	}
 
-	app := &Application{store: store}
+	app := &Application{store: store, seenMACs: map[string]bool{}, ackWaiters: map[string]chan string{}}
+	log.Printf("startup config: db=%s mqtt=%s http=%s static=%s", dbPath, broker, addr, staticDir)
 
 	mc, err := mqtt.NewClient(broker, clientID, func(mac string, payload []byte) {
 		status := mqtt.ParseStatus(payload)
 		if err := app.store.UpsertLEDDevice(mac, status); err != nil {
 			log.Printf("upsert LED device failed for %s: %v", mac, err)
 		}
+		app.noteFirstSeen(mac)
+		app.notifyProvisionAck(mac, payload)
 	})
 	if err != nil {
 		store.Close()
@@ -159,6 +168,7 @@ func (a *Application) handleUpdateDevice(w http.ResponseWriter, r *http.Request)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	log.Printf("device metadata updated: mac=%s name_set=%t room_set=%t", mac, patch.Name != nil, patch.RoomID != nil)
 	writeJSON(w, map[string]string{"status": "ok"})
 }
 
@@ -191,6 +201,7 @@ func (a *Application) handleCommandDevice(w http.ResponseWriter, r *http.Request
 	if err := a.store.ApplyLEDCommand(mac, cmd); err != nil {
 		log.Printf("apply led command failed for %s: %v", mac, err)
 	}
+	log.Printf("command sent: mac=%s power=%t brightness=%t color=%t pixelPin=%t", mac, cmd.Power != nil, cmd.Brightness != nil, cmd.Color != nil, cmd.PixelPin != nil)
 	writeJSON(w, map[string]string{"status": "sent"})
 }
 
@@ -219,6 +230,7 @@ func (a *Application) handleCreateRoom(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	log.Printf("room upserted: name=%s", strings.TrimSpace(body.Name))
 	writeJSON(w, map[string]string{"status": "ok"})
 }
 
@@ -282,6 +294,7 @@ func (a *Application) handlePicoProvision(w http.ResponseWriter, r *http.Request
 	a.provisionMu.Unlock()
 
 	status := a.pico.GetStatus()
+	log.Printf("provision request accepted: attempt=%d pixelPin=%d picoState=%s", a.currentAttempt(), pixelPin, status.State)
 	brokerHost := brokerHostForPico(r)
 	if brokerHost == "" {
 		a.setProvisionError("unable to determine MQTT broker host")
@@ -293,6 +306,8 @@ func (a *Application) handlePicoProvision(w http.ResponseWriter, r *http.Request
 	uf2Path := envOrDefault("IOTHUB_PICO_UF2", "/opt/iot-hub/pico-rp2.uf2")
 	ssid := os.Getenv("IOTHUB_WIFI_SSID")
 	password := os.Getenv("IOTHUB_WIFI_PASSWORD")
+	provisionTag := newProvisionTag()
+	a.registerProvisionAckWaiter(provisionTag)
 
 	go a.runProvision(provision.Options{
 		Status:       status,
@@ -303,25 +318,40 @@ func (a *Application) handlePicoProvision(w http.ResponseWriter, r *http.Request
 		WiFiPassword: password,
 		BrokerHost:   brokerHost,
 		BrokerPort:   1883,
+		ProvisionTag: provisionTag,
 		Progress:     a.setProvisionProgress,
-	})
+	}, provisionTag)
 
 	writeJSON(w, map[string]string{"status": "started"})
 }
 
-func (a *Application) runProvision(opts provision.Options) {
+func (a *Application) runProvision(opts provision.Options, provisionTag string) {
 	err := provision.Provision(opts)
 	if err != nil {
+		a.unregisterProvisionAckWaiter(provisionTag)
+		log.Printf("provision failed: attempt=%d err=%v", a.currentAttempt(), err)
 		a.setProvisionError(err.Error())
 		return
 	}
+
+	a.setProvisionProgress("verify", "Waiting for MQTT status confirmation from provisioned Pico")
+	mac, err := a.waitForProvisionAck(provisionTag, 25*time.Second)
+	if err != nil {
+		a.unregisterProvisionAckWaiter(provisionTag)
+		a.setProvisionError("files uploaded, but no MQTT confirmation received within 25s")
+		log.Printf("provision upload succeeded but no mqtt confirmation: attempt=%d", a.currentAttempt())
+		return
+	}
+	a.unregisterProvisionAckWaiter(provisionTag)
+	log.Printf("provision confirmed by MQTT: attempt=%d mac=%s", a.currentAttempt(), mac)
+
 	a.provisionMu.Lock()
 	attempt := a.provState.Attempt
 	startedAt := a.provState.StartedAt
 	a.provState = PicoProvisionState{
 		Running:    false,
 		Stage:      "done",
-		Detail:     "Provisioning completed successfully",
+		Detail:     fmt.Sprintf("Provisioning completed and device confirmed: %s", mac),
 		UpdatedAt:  time.Now().UTC().Format(time.RFC3339),
 		LastResult: "success",
 		Attempt:    attempt,
@@ -347,6 +377,7 @@ func (a *Application) setProvisionProgress(stage, detail string) {
 		FinishedAt: "",
 	}
 	a.provisionMu.Unlock()
+	log.Printf("provision progress: attempt=%d stage=%s detail=%s", attempt, stage, detail)
 }
 
 func (a *Application) setProvisionError(detail string) {
@@ -365,6 +396,81 @@ func (a *Application) setProvisionError(detail string) {
 		FinishedAt: time.Now().UTC().Format(time.RFC3339),
 	}
 	a.provisionMu.Unlock()
+	log.Printf("provision error: attempt=%d detail=%s", attempt, detail)
+}
+
+func (a *Application) noteFirstSeen(mac string) {
+	a.seenMu.Lock()
+	if a.seenMACs[mac] {
+		a.seenMu.Unlock()
+		return
+	}
+	a.seenMACs[mac] = true
+	a.seenMu.Unlock()
+	log.Printf("first status received from device mac=%s", mac)
+}
+
+func (a *Application) registerProvisionAckWaiter(tag string) {
+	a.ackMu.Lock()
+	a.ackWaiters[tag] = make(chan string, 1)
+	a.ackMu.Unlock()
+}
+
+func (a *Application) unregisterProvisionAckWaiter(tag string) {
+	a.ackMu.Lock()
+	delete(a.ackWaiters, tag)
+	a.ackMu.Unlock()
+}
+
+func (a *Application) notifyProvisionAck(mac string, payload []byte) {
+	var body map[string]any
+	if err := json.Unmarshal(payload, &body); err != nil {
+		return
+	}
+	tag, _ := body["provisionTag"].(string)
+	tag = strings.TrimSpace(tag)
+	if tag == "" {
+		return
+	}
+	a.ackMu.Lock()
+	ch, ok := a.ackWaiters[tag]
+	a.ackMu.Unlock()
+	if !ok {
+		return
+	}
+	select {
+	case ch <- mac:
+	default:
+	}
+}
+
+func (a *Application) waitForProvisionAck(tag string, timeout time.Duration) (string, error) {
+	a.ackMu.Lock()
+	ch, ok := a.ackWaiters[tag]
+	a.ackMu.Unlock()
+	if !ok {
+		return "", fmt.Errorf("ack waiter missing")
+	}
+	select {
+	case mac := <-ch:
+		return mac, nil
+	case <-time.After(timeout):
+		return "", fmt.Errorf("timeout")
+	}
+}
+
+func (a *Application) currentAttempt() int {
+	a.provisionMu.Lock()
+	defer a.provisionMu.Unlock()
+	return a.provState.Attempt
+}
+
+func newProvisionTag() string {
+	b := make([]byte, 6)
+	if _, err := rand.Read(b); err != nil {
+		return fmt.Sprintf("prov-%d", time.Now().UnixNano())
+	}
+	return "prov-" + hex.EncodeToString(b)
 }
 
 func brokerHostForPico(r *http.Request) string {

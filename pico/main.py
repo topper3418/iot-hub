@@ -21,6 +21,7 @@ MQTT_PORT = cfg.MQTT_PORT
 PIXEL_PIN = cfg.PIXEL_PIN
 PIXEL_COUNT = cfg.PIXEL_COUNT
 VERBOSE = getattr(cfg, "VERBOSE", True)
+PROVISION_TAG = getattr(cfg, "PROVISION_TAG", "")
 
 
 def log(msg):
@@ -36,6 +37,8 @@ status = {
     "pixelPin": PIXEL_PIN,
     "pixelCount": PIXEL_COUNT
 }
+if PROVISION_TAG:
+    status["provisionTag"] = PROVISION_TAG
 
 
 def connect_wifi():

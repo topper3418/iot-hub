@@ -20,8 +20,9 @@ const STAGE_INDEX = {
   upload_main: 5,
   upload_config: 6,
   reset: 7,
-  done: 8,
-  error: 8
+  verify: 8,
+  done: 9,
+  error: 9
 };
 
 export default function ProvisioningPage() {
@@ -182,6 +183,7 @@ export default function ProvisioningPage() {
                 { title: 'Upload main.py' },
                 { title: 'Upload device_config.py' },
                 { title: 'Reset Pico' },
+                { title: 'Verify MQTT' },
                 { title: 'Done' }
               ]}
             />

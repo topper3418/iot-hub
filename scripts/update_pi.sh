@@ -38,9 +38,11 @@ harden_serial_access() {
       run_root usermod -a -G "$grp" iotled || true
     fi
   done
-  run_root systemctl disable --now ModemManager.service || true
-  run_root systemctl disable --now brltty.service || true
-  run_root systemctl disable --now serial-getty@ttyACM0.service || true
+  for svc in ModemManager.service brltty.service serial-getty@ttyACM0.service; do
+    if run_root systemctl list-unit-files "$svc" --no-legend >/dev/null 2>&1; then
+      run_root systemctl disable --now "$svc" >/dev/null 2>&1 || true
+    fi
+  done
 }
 
 cd "$ROOT_DIR"
