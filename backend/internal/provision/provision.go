@@ -135,6 +135,10 @@ func Provision(opts Options) error {
 	emit(opts.Progress, "upload_main", "Uploading files using manual-style helper")
 	if err := pushFilesViaHelper(opts.Progress, serialPort, opts.MainPyPath, cfgPath); err != nil {
 		emit(opts.Progress, "upload_main", "Helper upload failed, retrying direct mpremote path")
+		emit(opts.Progress, "upload_main", "Installing umqtt.simple dependency")
+		if err := runMPRemoteWithRetry(opts.Progress, "upload_main", "install umqtt.simple", serialPort, "mip", "install", "umqtt.simple"); err != nil {
+			return fmt.Errorf("failed to install umqtt.simple: %w", err)
+		}
 		if err := runMPRemoteWithRetry(opts.Progress, "upload_main", "upload main.py", serialPort, "fs", "cp", opts.MainPyPath, ":main.py"); err != nil {
 			return fmt.Errorf("failed to upload main.py: %w", err)
 		}

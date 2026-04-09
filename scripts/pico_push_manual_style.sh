@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Directory: scripts/
 # Modified: 2026-04-08
-# Description: Thonny-like manual upload helper: pushes main.py and device_config.py to Pico via mpremote and resets it.
+# Description: Thonny-like manual upload helper: ensures umqtt dependency, pushes main.py/device_config.py, and resets Pico.
 # Uses: none
 # Used by: backend/internal/provision/provision.go, scripts/install_pi.sh, scripts/update_pi.sh
 set -euo pipefail
@@ -42,14 +42,31 @@ for ATTEMPT in 1 2 3 4 5 6; do
 
     echo "[pico-push] attempt $ATTEMPT using $PORT" >&2
 
-    if OUT=$(mpremote connect "$PORT" fs cp "$MAIN_PY" :main.py 2>&1); then
-      if OUT=$(mpremote connect "$PORT" fs cp "$CFG_PY" :device_config.py 2>&1); then
-        if OUT=$(mpremote connect "$PORT" reset 2>&1); then
-          echo "[pico-push] upload complete via $PORT" >&2
-          exit 0
-        fi
+    if ! mpremote connect "$PORT" exec "import umqtt.simple" >/dev/null 2>&1; then
+      echo "[pico-push] umqtt.simple missing on $PORT, installing via mip" >&2
+      if ! OUT=$(mpremote connect "$PORT" mip install umqtt.simple 2>&1); then
+        LAST_ERR="failed to install umqtt.simple: $OUT"
+        continue
       fi
     fi
+
+    if ! OUT=$(mpremote connect "$PORT" fs cp "$MAIN_PY" :main.py 2>&1); then
+      LAST_ERR="$OUT"
+      continue
+    fi
+
+    if ! OUT=$(mpremote connect "$PORT" fs cp "$CFG_PY" :device_config.py 2>&1); then
+      LAST_ERR="$OUT"
+      continue
+    fi
+
+    if ! OUT=$(mpremote connect "$PORT" reset 2>&1); then
+      LAST_ERR="$OUT"
+      continue
+    fi
+
+    echo "[pico-push] upload complete via $PORT" >&2
+    exit 0
 
     LAST_ERR="$OUT"
   done < <(candidates)
