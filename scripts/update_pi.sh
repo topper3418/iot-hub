@@ -2,7 +2,7 @@
 # Directory: scripts/
 # Modified: 2026-04-08
 # Description: Pulls the latest changes from git and selectively rebuilds and redeploys only the components that changed.
-# Uses: scripts/build_frontend.sh, scripts/build_backend.sh, scripts/deploy_frontend.sh, scripts/deploy_backend.sh, scripts/deploy_pico_assets.sh
+# Uses: scripts/build_frontend.sh, scripts/build_backend.sh, scripts/deploy_frontend.sh, scripts/deploy_backend.sh, scripts/deploy_pico_assets.sh, scripts/flash_pico_uf2.sh
 # Used by: none (run manually as a normal user on the Pi)
 set -euo pipefail
 
@@ -20,6 +20,14 @@ run_root() {
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SCRIPTS_DIR="$ROOT_DIR/scripts"
+
+deploy_flash_helper() {
+  run_root install -m 0755 "$SCRIPTS_DIR/flash_pico_uf2.sh" /usr/local/bin/iot-hub-flash-uf2
+  run_root bash -c "cat > /etc/sudoers.d/iot-hub-flash-pico <<'EOF'
+iotled ALL=(root) NOPASSWD: /usr/local/bin/iot-hub-flash-uf2 *
+EOF"
+  run_root chmod 440 /etc/sudoers.d/iot-hub-flash-pico
+}
 
 cd "$ROOT_DIR"
 
@@ -42,6 +50,7 @@ CHANGED="$(git diff --name-only "$OLD_COMMIT" "$NEW_COMMIT")"
 REBUILD_FRONTEND=0
 REBUILD_BACKEND=0
 REDEPLOY_PICO=0
+REDEPLOY_HELPERS=0
 REDEPLOY_SYSTEMD=0
 REDEPLOY_NGINX=0
 
@@ -58,6 +67,10 @@ if echo "$CHANGED" | grep -q '^pico/'; then
   REDEPLOY_PICO=1
 fi
 
+if echo "$CHANGED" | grep -q '^scripts/flash_pico_uf2.sh$'; then
+  REDEPLOY_HELPERS=1
+fi
+
 if echo "$CHANGED" | grep -q '^deploy/systemd/'; then
   REDEPLOY_SYSTEMD=1
 fi
@@ -66,8 +79,8 @@ if echo "$CHANGED" | grep -q '^deploy/nginx/'; then
   REDEPLOY_NGINX=1
 fi
 
-if [[ "$REBUILD_FRONTEND" -eq 0 && "$REBUILD_BACKEND" -eq 0 && "$REDEPLOY_PICO" -eq 0 && "$REDEPLOY_SYSTEMD" -eq 0 && "$REDEPLOY_NGINX" -eq 0 ]]; then
-  echo "No frontend, backend, pico, or deploy config changes detected. Nothing to rebuild."
+if [[ "$REBUILD_FRONTEND" -eq 0 && "$REBUILD_BACKEND" -eq 0 && "$REDEPLOY_PICO" -eq 0 && "$REDEPLOY_HELPERS" -eq 0 && "$REDEPLOY_SYSTEMD" -eq 0 && "$REDEPLOY_NGINX" -eq 0 ]]; then
+  echo "No frontend, backend, pico, helper, or deploy config changes detected. Nothing to rebuild."
   exit 0
 fi
 
@@ -86,6 +99,11 @@ fi
 if [[ "$REDEPLOY_PICO" -eq 1 ]]; then
   echo "--- Redeploying Pico assets ---"
   "$SCRIPTS_DIR/deploy_pico_assets.sh"
+fi
+
+if [[ "$REDEPLOY_HELPERS" -eq 1 ]]; then
+  echo "--- Redeploying provisioning helper scripts ---"
+  deploy_flash_helper
 fi
 
 if [[ "$REDEPLOY_SYSTEMD" -eq 1 ]]; then

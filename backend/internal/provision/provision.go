@@ -19,6 +19,8 @@ import (
 	"time"
 )
 
+const flashHelperPath = "/usr/local/bin/iot-hub-flash-uf2"
+
 type Options struct {
 	Status       Status
 	PixelPin     int
@@ -73,11 +75,15 @@ func Provision(opts Options) error {
 			return fmt.Errorf("UF2 file not found at %s", opts.UF2Path)
 		}
 		mount, err := findBootselMount()
-		if err != nil {
-			return err
-		}
-		if err := copyFile(filepath.Join(mount, filepath.Base(opts.UF2Path)), opts.UF2Path); err != nil {
-			return fmt.Errorf("failed to flash UF2: %w", err)
+		if err == nil {
+			if err := copyFile(filepath.Join(mount, filepath.Base(opts.UF2Path)), opts.UF2Path); err != nil {
+				return fmt.Errorf("failed to flash UF2: %w", err)
+			}
+		} else {
+			emit(opts.Progress, "flashing", "BOOTSEL detected but not mounted, using privileged flash helper")
+			if helperErr := flashUF2ViaHelper(opts.UF2Path); helperErr != nil {
+				return fmt.Errorf("%v; helper fallback failed: %w", err, helperErr)
+			}
 		}
 		emit(opts.Progress, "waiting_serial", "Waiting for Pico serial interface")
 		serialPort, err = waitForSerial(25 * time.Second)
@@ -194,6 +200,18 @@ func findBootselMount() (string, error) {
 		}
 	}
 	return "", errors.New("BOOTSEL device found but not mounted (RPI-RP2 mountpoint not found)")
+}
+
+func flashUF2ViaHelper(uf2Path string) error {
+	if _, err := os.Stat(flashHelperPath); err != nil {
+		return fmt.Errorf("flash helper not found at %s", flashHelperPath)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := run(ctx, "sudo", "-n", flashHelperPath, uf2Path); err != nil {
+		return fmt.Errorf("sudo helper execution failed: %w", err)
+	}
+	return nil
 }
 
 func waitForSerial(timeout time.Duration) (string, error) {

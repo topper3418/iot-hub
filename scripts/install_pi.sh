@@ -2,7 +2,7 @@
 # Directory: scripts/
 # Modified: 2026-04-08
 # Description: First-time installation of the IoT hub on a Raspberry Pi. Installs dependencies, creates user/dirs, builds, deploys, and starts services.
-# Uses: scripts/build_frontend.sh, scripts/build_backend.sh, scripts/deploy_frontend.sh, scripts/deploy_backend.sh, scripts/deploy_pico_assets.sh, deploy/systemd/iot-hub.service, deploy/nginx/iot-hub.conf
+# Uses: scripts/build_frontend.sh, scripts/build_backend.sh, scripts/deploy_frontend.sh, scripts/deploy_backend.sh, scripts/deploy_pico_assets.sh, scripts/flash_pico_uf2.sh, deploy/systemd/iot-hub.service, deploy/nginx/iot-hub.conf
 # Used by: none (run manually as a normal user on the Pi)
 set -euo pipefail
 
@@ -20,6 +20,14 @@ run_root() {
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SCRIPTS_DIR="$ROOT_DIR/scripts"
+
+deploy_flash_helper() {
+  run_root install -m 0755 "$SCRIPTS_DIR/flash_pico_uf2.sh" /usr/local/bin/iot-hub-flash-uf2
+  run_root bash -c "cat > /etc/sudoers.d/iot-hub-flash-pico <<'EOF'
+iotled ALL=(root) NOPASSWD: /usr/local/bin/iot-hub-flash-uf2 *
+EOF"
+  run_root chmod 440 /etc/sudoers.d/iot-hub-flash-pico
+}
 
 run_root apt-get update
 run_root apt-get install -y nginx mosquitto mosquitto-clients sqlite3 golang-go nodejs npm python3 python3-pip wireless-tools
@@ -41,6 +49,7 @@ run_root chown -R iotled:iotled /opt/iot-hub /var/lib/iot-hub /var/log/iot-hub
 "$SCRIPTS_DIR/deploy_frontend.sh"
 "$SCRIPTS_DIR/deploy_backend.sh"
 "$SCRIPTS_DIR/deploy_pico_assets.sh"
+deploy_flash_helper
 
 run_root cp "$ROOT_DIR/deploy/systemd/iot-hub.service" /etc/systemd/system/iot-hub.service
 run_root cp "$ROOT_DIR/deploy/nginx/iot-hub.conf" /etc/nginx/sites-available/iot-hub.conf
