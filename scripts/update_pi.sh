@@ -60,6 +60,7 @@ fi
 
 if echo "$CHANGED" | grep -qE '^(backend/|go\.mod|go\.sum)'; then
   REBUILD_BACKEND=1
+  REDEPLOY_HELPERS=1
   REDEPLOY_SYSTEMD=1
 fi
 
@@ -68,6 +69,14 @@ if echo "$CHANGED" | grep -q '^pico/'; then
 fi
 
 if echo "$CHANGED" | grep -q '^scripts/flash_pico_uf2.sh$'; then
+  REDEPLOY_HELPERS=1
+fi
+
+if [[ ! -x /usr/local/bin/iot-hub-flash-uf2 ]]; then
+  REDEPLOY_HELPERS=1
+fi
+
+if [[ ! -f /etc/sudoers.d/iot-hub-flash-pico ]]; then
   REDEPLOY_HELPERS=1
 fi
 
