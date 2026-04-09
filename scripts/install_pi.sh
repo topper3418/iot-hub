@@ -29,6 +29,17 @@ EOF"
   run_root chmod 440 /etc/sudoers.d/iot-hub-flash-pico
 }
 
+harden_serial_access() {
+  for grp in dialout plugdev uucp; do
+    if getent group "$grp" >/dev/null 2>&1; then
+      run_root usermod -a -G "$grp" iotled
+    fi
+  done
+  run_root systemctl disable --now ModemManager.service || true
+  run_root systemctl disable --now brltty.service || true
+  run_root systemctl disable --now serial-getty@ttyACM0.service || true
+}
+
 run_root apt-get update
 run_root apt-get install -y nginx mosquitto mosquitto-clients sqlite3 golang-go nodejs npm python3 python3-pip wireless-tools
 
@@ -39,6 +50,7 @@ fi
 if ! run_root id -u iotled >/dev/null 2>&1; then
   run_root useradd --system --create-home --shell /usr/sbin/nologin iotled
 fi
+harden_serial_access
 
 run_root mkdir -p /opt/iot-hub/backend /opt/iot-hub/frontend /var/lib/iot-hub /var/log/iot-hub
 run_root chown -R iotled:iotled /opt/iot-hub /var/lib/iot-hub /var/log/iot-hub

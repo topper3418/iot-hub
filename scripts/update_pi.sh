@@ -29,7 +29,20 @@ EOF"
   run_root chmod 440 /etc/sudoers.d/iot-hub-flash-pico
 }
 
+harden_serial_access() {
+  for grp in dialout plugdev uucp; do
+    if getent group "$grp" >/dev/null 2>&1; then
+      run_root usermod -a -G "$grp" iotled || true
+    fi
+  done
+  run_root systemctl disable --now ModemManager.service || true
+  run_root systemctl disable --now brltty.service || true
+  run_root systemctl disable --now serial-getty@ttyACM0.service || true
+}
+
 cd "$ROOT_DIR"
+
+harden_serial_access
 
 OLD_COMMIT="$(git rev-parse HEAD)"
 echo "Current commit: $OLD_COMMIT"

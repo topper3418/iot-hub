@@ -111,19 +111,16 @@ func Provision(opts Options) error {
 	}
 	defer cleanup()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
 	emit(opts.Progress, "upload_main", "Uploading main.py")
-	if err := run(ctx, "mpremote", "connect", serialPort, "fs", "cp", opts.MainPyPath, ":main.py"); err != nil {
+	if err := runMPRemoteWithRetry(opts.Progress, "upload_main", "upload main.py", serialPort, "fs", "cp", opts.MainPyPath, ":main.py"); err != nil {
 		return fmt.Errorf("failed to upload main.py: %w", err)
 	}
 	emit(opts.Progress, "upload_config", "Uploading device_config.py")
-	if err := run(ctx, "mpremote", "connect", serialPort, "fs", "cp", cfgPath, ":device_config.py"); err != nil {
+	if err := runMPRemoteWithRetry(opts.Progress, "upload_config", "upload device_config.py", serialPort, "fs", "cp", cfgPath, ":device_config.py"); err != nil {
 		return fmt.Errorf("failed to upload device_config.py: %w", err)
 	}
 	emit(opts.Progress, "reset", "Resetting Pico")
-	if err := run(ctx, "mpremote", "connect", serialPort, "reset"); err != nil {
+	if err := runMPRemoteWithRetry(opts.Progress, "reset", "reset pico", serialPort, "reset"); err != nil {
 		return fmt.Errorf("uploaded files, but reset failed: %w", err)
 	}
 	emit(opts.Progress, "done", "Provisioning completed")
@@ -219,11 +216,60 @@ func waitForSerial(timeout time.Duration) (string, error) {
 	for time.Now().Before(deadline) {
 		ports, _ := filepath.Glob("/dev/ttyACM*")
 		if len(ports) > 0 {
+			time.Sleep(800 * time.Millisecond)
 			return ports[0], nil
 		}
 		time.Sleep(500 * time.Millisecond)
 	}
 	return "", errors.New("timed out waiting for /dev/ttyACM*")
+}
+
+func runMPRemoteWithRetry(progress func(stage, detail string), stage, action, preferredPort string, args ...string) error {
+	var lastErr error
+	for attempt := 1; attempt <= 6; attempt++ {
+		ports := serialCandidates(preferredPort)
+		if len(ports) == 0 {
+			ports = []string{preferredPort}
+		}
+		for _, port := range ports {
+			if strings.TrimSpace(port) == "" {
+				continue
+			}
+			emit(progress, stage, fmt.Sprintf("Attempt %d/6: %s via %s", attempt, action, port))
+			ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+			err := run(ctx, "mpremote", append([]string{"connect", port}, args...)...)
+			cancel()
+			if err == nil {
+				return nil
+			}
+			lastErr = err
+		}
+		time.Sleep(900 * time.Millisecond)
+	}
+
+	if lastErr == nil {
+		lastErr = errors.New("unknown mpremote failure")
+	}
+	return fmt.Errorf("%s failed after retries: %w. Ensure iotled has serial permissions and disable ModemManager/brltty", action, lastErr)
+}
+
+func serialCandidates(preferredPort string) []string {
+	seen := map[string]bool{}
+	ordered := make([]string, 0, 4)
+	add := func(p string) {
+		p = strings.TrimSpace(p)
+		if p == "" || seen[p] {
+			return
+		}
+		seen[p] = true
+		ordered = append(ordered, p)
+	}
+	add(preferredPort)
+	ports, _ := filepath.Glob("/dev/ttyACM*")
+	for _, p := range ports {
+		add(p)
+	}
+	return ordered
 }
 
 func writeDeviceConfig(ssid, password, broker string, port, pixelPin int) (string, func(), error) {
