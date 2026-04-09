@@ -3,13 +3,20 @@
 # Modified: 2026-04-08
 # Description: Pulls the latest changes from git and selectively rebuilds and redeploys only the components that changed.
 # Uses: scripts/build_frontend.sh, scripts/build_backend.sh, scripts/deploy_frontend.sh, scripts/deploy_backend.sh, scripts/deploy_pico_assets.sh
-# Used by: none (run manually as root on the Pi)
+# Used by: none (run manually as a normal user on the Pi)
 set -euo pipefail
 
-if [[ "$EUID" -ne 0 ]]; then
-  echo "Run as root (sudo scripts/update_pi.sh)"
-  exit 1
-fi
+run_root() {
+  if [[ "$EUID" -eq 0 ]]; then
+    "$@"
+    return
+  fi
+  if ! command -v sudo >/dev/null 2>&1; then
+    echo "sudo is required for privileged deploy commands"
+    exit 1
+  fi
+  sudo "$@"
+}
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SCRIPTS_DIR="$ROOT_DIR/scripts"
@@ -83,17 +90,17 @@ fi
 
 if [[ "$REDEPLOY_SYSTEMD" -eq 1 ]]; then
   echo "--- Redeploying systemd unit ---"
-  cp "$ROOT_DIR/deploy/systemd/iot-hub.service" /etc/systemd/system/iot-hub.service
-  systemctl daemon-reload
-  systemctl restart iot-hub
+  run_root cp "$ROOT_DIR/deploy/systemd/iot-hub.service" /etc/systemd/system/iot-hub.service
+  run_root systemctl daemon-reload
+  run_root systemctl restart iot-hub
   echo "iot-hub service restarted."
 fi
 
 if [[ "$REDEPLOY_NGINX" -eq 1 ]]; then
   echo "--- Redeploying nginx config ---"
-  cp "$ROOT_DIR/deploy/nginx/iot-hub.conf" /etc/nginx/sites-available/iot-hub.conf
-  ln -sf /etc/nginx/sites-available/iot-hub.conf /etc/nginx/sites-enabled/iot-hub.conf
-  systemctl reload nginx
+  run_root cp "$ROOT_DIR/deploy/nginx/iot-hub.conf" /etc/nginx/sites-available/iot-hub.conf
+  run_root ln -sf /etc/nginx/sites-available/iot-hub.conf /etc/nginx/sites-enabled/iot-hub.conf
+  run_root systemctl reload nginx
   echo "nginx config reloaded."
 fi
 

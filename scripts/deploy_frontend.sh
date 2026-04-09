@@ -6,13 +6,20 @@
 # Used by: scripts/install_pi.sh, scripts/update_pi.sh
 set -euo pipefail
 
-if [[ "$EUID" -ne 0 ]]; then
-  echo "Run as root"
-  exit 1
-fi
+run_root() {
+  if [[ "$EUID" -eq 0 ]]; then
+    "$@"
+    return
+  fi
+  if ! command -v sudo >/dev/null 2>&1; then
+    echo "sudo is required for frontend deployment"
+    exit 1
+  fi
+  sudo "$@"
+}
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-rsync -a --delete "$ROOT_DIR/frontend/dist/" /opt/iot-hub/frontend/dist/
+run_root rsync -a --delete "$ROOT_DIR/frontend/dist/" /opt/iot-hub/frontend/dist/
 
 echo "Frontend deployed to /opt/iot-hub/frontend/dist/"
