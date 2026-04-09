@@ -25,5 +25,7 @@ export const api = {
   sendCommand: (mac, body) => request(`/api/devices/${mac}/command`, { method: 'POST', body: JSON.stringify(body) }),
   listRooms: () => request('/api/rooms'),
   createRoom: (name) => request('/api/rooms', { method: 'POST', body: JSON.stringify({ name }) }),
-  picoStatus: () => request('/api/pico/status')
+  picoStatus: () => request('/api/pico/status'),
+  picoProvisionState: () => request('/api/pico/provision/state'),
+  picoProvision: (body) => request('/api/pico/provision', { method: 'POST', body: JSON.stringify(body) })
 };

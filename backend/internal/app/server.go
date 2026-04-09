@@ -1,7 +1,7 @@
 // Directory: backend/internal/app/
 // Modified: 2026-04-08
-// Description: HTTP API routing, MQTT wiring, and orchestration layer. Bridges the db and mqtt packages.
-// Uses: backend/internal/db/db.go, backend/internal/model/types.go, backend/internal/mqtt/client.go, backend/internal/mqtt/payload.go, backend/internal/provision/monitor.go
+// Description: HTTP API routing, MQTT wiring, and orchestration layer. Bridges db, mqtt, and Pico provisioning.
+// Uses: backend/internal/db/db.go, backend/internal/model/types.go, backend/internal/mqtt/client.go, backend/internal/mqtt/payload.go, backend/internal/provision/monitor.go, backend/internal/provision/provision.go
 // Used by: backend/cmd/server/main.go
 
 package app
@@ -11,10 +11,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"iot-hub/backend/internal/db"
@@ -24,10 +26,21 @@ import (
 )
 
 type Application struct {
-	store      *db.Store
-	mqttClient *mqtt.Client
-	httpServer *http.Server
-	pico       *provision.Monitor
+	store       *db.Store
+	mqttClient  *mqtt.Client
+	httpServer  *http.Server
+	pico        *provision.Monitor
+	provisionMu sync.Mutex
+	provState   PicoProvisionState
+}
+
+type PicoProvisionState struct {
+	Running    bool   `json:"running"`
+	Stage      string `json:"stage"`
+	Detail     string `json:"detail"`
+	Error      string `json:"error,omitempty"`
+	UpdatedAt  string `json:"updatedAt"`
+	LastResult string `json:"lastResult"`
 }
 
 func New() (*Application, error) {
@@ -63,8 +76,11 @@ func New() (*Application, error) {
 	mux.HandleFunc("GET /api/rooms", app.handleListRooms)
 	mux.HandleFunc("POST /api/rooms", app.handleCreateRoom)
 	mux.HandleFunc("GET /api/pico/status", app.handlePicoStatus)
+	mux.HandleFunc("GET /api/pico/provision/state", app.handlePicoProvisionState)
+	mux.HandleFunc("POST /api/pico/provision", app.handlePicoProvision)
 
 	app.pico = provision.NewMonitor()
+	app.provState = PicoProvisionState{Stage: "idle", Detail: "Waiting for configure request", UpdatedAt: time.Now().UTC().Format(time.RFC3339), LastResult: "none"}
 
 	if info, err := os.Stat(staticDir); err == nil && info.IsDir() {
 		fileServer := http.FileServer(http.Dir(staticDir))
@@ -204,6 +220,128 @@ func (a *Application) handleCreateRoom(w http.ResponseWriter, r *http.Request) {
 
 func (a *Application) handlePicoStatus(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, a.pico.GetStatus())
+}
+
+func (a *Application) handlePicoProvisionState(w http.ResponseWriter, _ *http.Request) {
+	a.provisionMu.Lock()
+	state := a.provState
+	a.provisionMu.Unlock()
+	writeJSON(w, state)
+}
+
+func (a *Application) handlePicoProvision(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		PixelPin *int `json:"pixelPin"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "invalid json", http.StatusBadRequest)
+		return
+	}
+	pixelPin := 16
+	if body.PixelPin != nil {
+		pixelPin = *body.PixelPin
+	}
+
+	a.provisionMu.Lock()
+	if a.provState.Running {
+		a.provisionMu.Unlock()
+		http.Error(w, "provisioning already in progress", http.StatusConflict)
+		return
+	}
+	a.provState = PicoProvisionState{Running: true, Stage: "queued", Detail: "Provisioning request accepted", UpdatedAt: time.Now().UTC().Format(time.RFC3339), LastResult: a.provState.LastResult}
+	a.provisionMu.Unlock()
+
+	status := a.pico.GetStatus()
+	brokerHost := brokerHostForPico(r)
+	if brokerHost == "" {
+		a.setProvisionError("unable to determine MQTT broker host")
+		http.Error(w, "unable to determine MQTT broker host", http.StatusInternalServerError)
+		return
+	}
+
+	mainPyPath := envOrDefault("IOTHUB_PICO_MAIN", "../pico/main.py")
+	uf2Path := envOrDefault("IOTHUB_PICO_UF2", "/opt/iot-hub/pico-rp2.uf2")
+	ssid := os.Getenv("IOTHUB_WIFI_SSID")
+	password := os.Getenv("IOTHUB_WIFI_PASSWORD")
+
+	go a.runProvision(provision.Options{
+		Status:       status,
+		PixelPin:     pixelPin,
+		MainPyPath:   mainPyPath,
+		UF2Path:      uf2Path,
+		WiFiSSID:     ssid,
+		WiFiPassword: password,
+		BrokerHost:   brokerHost,
+		BrokerPort:   1883,
+		Progress:     a.setProvisionProgress,
+	})
+
+	writeJSON(w, map[string]string{"status": "started"})
+}
+
+func (a *Application) runProvision(opts provision.Options) {
+	err := provision.Provision(opts)
+	if err != nil {
+		a.setProvisionError(err.Error())
+		return
+	}
+	a.provisionMu.Lock()
+	a.provState = PicoProvisionState{
+		Running:    false,
+		Stage:      "done",
+		Detail:     "Provisioning completed successfully",
+		UpdatedAt:  time.Now().UTC().Format(time.RFC3339),
+		LastResult: "success",
+	}
+	a.provisionMu.Unlock()
+}
+
+func (a *Application) setProvisionProgress(stage, detail string) {
+	a.provisionMu.Lock()
+	a.provState = PicoProvisionState{
+		Running:    true,
+		Stage:      stage,
+		Detail:     detail,
+		UpdatedAt:  time.Now().UTC().Format(time.RFC3339),
+		LastResult: a.provState.LastResult,
+	}
+	a.provisionMu.Unlock()
+}
+
+func (a *Application) setProvisionError(detail string) {
+	a.provisionMu.Lock()
+	a.provState = PicoProvisionState{
+		Running:    false,
+		Stage:      "error",
+		Detail:     "Provisioning failed",
+		Error:      detail,
+		UpdatedAt:  time.Now().UTC().Format(time.RFC3339),
+		LastResult: "error",
+	}
+	a.provisionMu.Unlock()
+}
+
+func brokerHostForPico(r *http.Request) string {
+	if v := strings.TrimSpace(os.Getenv("IOTHUB_PICO_MQTT_BROKER")); v != "" {
+		return v
+	}
+
+	host := strings.TrimSpace(r.Host)
+	if host != "" {
+		parsedHost := host
+		if h, _, err := net.SplitHostPort(host); err == nil {
+			parsedHost = h
+		}
+		parsedHost = strings.Trim(parsedHost, "[]")
+		if parsedHost != "" && parsedHost != "localhost" && parsedHost != "127.0.0.1" {
+			return parsedHost
+		}
+	}
+
+	if ip := provision.LocalIPv4(); ip != "" {
+		return ip
+	}
+	return ""
 }
 
 func writeJSON(w http.ResponseWriter, v any) {

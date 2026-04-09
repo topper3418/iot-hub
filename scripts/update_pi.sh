@@ -2,7 +2,7 @@
 # Directory: scripts/
 # Modified: 2026-04-08
 # Description: Pulls the latest changes from git and selectively rebuilds and redeploys only the components that changed.
-# Uses: scripts/build_frontend.sh, scripts/build_backend.sh, scripts/deploy_frontend.sh, scripts/deploy_backend.sh
+# Uses: scripts/build_frontend.sh, scripts/build_backend.sh, scripts/deploy_frontend.sh, scripts/deploy_backend.sh, scripts/deploy_pico_assets.sh
 # Used by: none (run manually as root on the Pi)
 set -euo pipefail
 
@@ -34,6 +34,7 @@ CHANGED="$(git diff --name-only "$OLD_COMMIT" "$NEW_COMMIT")"
 
 REBUILD_FRONTEND=0
 REBUILD_BACKEND=0
+REDEPLOY_PICO=0
 REDEPLOY_SYSTEMD=0
 REDEPLOY_NGINX=0
 
@@ -43,6 +44,11 @@ fi
 
 if echo "$CHANGED" | grep -qE '^(backend/|go\.mod|go\.sum)'; then
   REBUILD_BACKEND=1
+  REDEPLOY_SYSTEMD=1
+fi
+
+if echo "$CHANGED" | grep -q '^pico/'; then
+  REDEPLOY_PICO=1
 fi
 
 if echo "$CHANGED" | grep -q '^deploy/systemd/'; then
@@ -53,8 +59,8 @@ if echo "$CHANGED" | grep -q '^deploy/nginx/'; then
   REDEPLOY_NGINX=1
 fi
 
-if [[ "$REBUILD_FRONTEND" -eq 0 && "$REBUILD_BACKEND" -eq 0 && "$REDEPLOY_SYSTEMD" -eq 0 && "$REDEPLOY_NGINX" -eq 0 ]]; then
-  echo "No frontend, backend, or deploy config changes detected. Nothing to rebuild."
+if [[ "$REBUILD_FRONTEND" -eq 0 && "$REBUILD_BACKEND" -eq 0 && "$REDEPLOY_PICO" -eq 0 && "$REDEPLOY_SYSTEMD" -eq 0 && "$REDEPLOY_NGINX" -eq 0 ]]; then
+  echo "No frontend, backend, pico, or deploy config changes detected. Nothing to rebuild."
   exit 0
 fi
 
@@ -68,6 +74,11 @@ if [[ "$REBUILD_BACKEND" -eq 1 ]]; then
   echo "--- Rebuilding backend ---"
   "$SCRIPTS_DIR/build_backend.sh"
   "$SCRIPTS_DIR/deploy_backend.sh"
+fi
+
+if [[ "$REDEPLOY_PICO" -eq 1 ]]; then
+  echo "--- Redeploying Pico assets ---"
+  "$SCRIPTS_DIR/deploy_pico_assets.sh"
 fi
 
 if [[ "$REDEPLOY_SYSTEMD" -eq 1 ]]; then

@@ -12,6 +12,8 @@ Environment=IOTHUB_DB_PATH=/var/lib/iot-hub/iothub.db
 Environment=IOTHUB_HTTP_ADDR=127.0.0.1:8080
 Environment=IOTHUB_MQTT_BROKER=tcp://127.0.0.1:1883
 Environment=IOTHUB_STATIC_DIR=/opt/iot-hub/frontend/dist
+Environment=IOTHUB_PICO_MAIN=/opt/iot-hub/pico/main.py
+Environment=IOTHUB_PICO_UF2=/opt/iot-hub/pico-rp2.uf2
 ExecStart=/usr/local/bin/iot-hub-backend
 Restart=always
 RestartSec=2
