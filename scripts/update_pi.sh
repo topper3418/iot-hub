@@ -2,7 +2,7 @@
 # Directory: scripts/
 # Modified: 2026-04-08
 # Description: Pulls the latest changes from git and selectively rebuilds and redeploys only the components that changed.
-# Uses: scripts/build_frontend.sh, scripts/build_backend.sh, scripts/deploy_frontend.sh, scripts/deploy_backend.sh, scripts/deploy_pico_assets.sh, scripts/flash_pico_uf2.sh, scripts/pico_push_manual_style.sh, scripts/read_host_wifi_creds.sh
+# Uses: scripts/build_frontend.sh, scripts/build_backend.sh, scripts/deploy_frontend.sh, scripts/deploy_backend.sh, scripts/deploy_pico_assets.sh, scripts/flash_pico_uf2.sh, scripts/pico_push_manual_style.sh, scripts/read_host_wifi_creds.sh, deploy/mosquitto/iot-hub.conf
 # Used by: none (run manually as a normal user on the Pi)
 set -euo pipefail
 
@@ -70,6 +70,7 @@ REDEPLOY_PICO=0
 REDEPLOY_HELPERS=0
 REDEPLOY_SYSTEMD=0
 REDEPLOY_NGINX=0
+REDEPLOY_MOSQUITTO=0
 
 if echo "$CHANGED" | grep -q '^frontend/'; then
   REBUILD_FRONTEND=1
@@ -113,7 +114,15 @@ if echo "$CHANGED" | grep -q '^deploy/nginx/'; then
   REDEPLOY_NGINX=1
 fi
 
-if [[ "$REBUILD_FRONTEND" -eq 0 && "$REBUILD_BACKEND" -eq 0 && "$REDEPLOY_PICO" -eq 0 && "$REDEPLOY_HELPERS" -eq 0 && "$REDEPLOY_SYSTEMD" -eq 0 && "$REDEPLOY_NGINX" -eq 0 ]]; then
+if echo "$CHANGED" | grep -q '^deploy/mosquitto/'; then
+  REDEPLOY_MOSQUITTO=1
+fi
+
+if [[ ! -f /etc/mosquitto/conf.d/iot-hub.conf ]]; then
+  REDEPLOY_MOSQUITTO=1
+fi
+
+if [[ "$REBUILD_FRONTEND" -eq 0 && "$REBUILD_BACKEND" -eq 0 && "$REDEPLOY_PICO" -eq 0 && "$REDEPLOY_HELPERS" -eq 0 && "$REDEPLOY_SYSTEMD" -eq 0 && "$REDEPLOY_NGINX" -eq 0 && "$REDEPLOY_MOSQUITTO" -eq 0 ]]; then
   echo "No frontend, backend, pico, helper, or deploy config changes detected. Nothing to rebuild."
   exit 0
 fi
@@ -154,6 +163,13 @@ if [[ "$REDEPLOY_NGINX" -eq 1 ]]; then
   run_root ln -sf /etc/nginx/sites-available/iot-hub.conf /etc/nginx/sites-enabled/iot-hub.conf
   run_root systemctl reload nginx
   echo "nginx config reloaded."
+fi
+
+if [[ "$REDEPLOY_MOSQUITTO" -eq 1 ]]; then
+  echo "--- Redeploying mosquitto config ---"
+  run_root cp "$ROOT_DIR/deploy/mosquitto/iot-hub.conf" /etc/mosquitto/conf.d/iot-hub.conf
+  run_root systemctl restart mosquitto
+  echo "mosquitto restarted."
 fi
 
 echo "Update complete."

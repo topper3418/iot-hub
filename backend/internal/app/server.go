@@ -490,6 +490,17 @@ func brokerHostForPico(r *http.Request) string {
 		}
 	}
 
+	hostname, err := os.Hostname()
+	if err == nil {
+		hostname = strings.TrimSpace(hostname)
+		if hostname != "" {
+			if strings.Contains(hostname, ".") {
+				return hostname
+			}
+			return hostname + ".local"
+		}
+	}
+
 	if ip := provision.LocalIPv4(); ip != "" {
 		return ip
 	}

@@ -25,6 +25,7 @@ run_root systemctl restart nginx || true
 run_root rm -f /etc/systemd/system/iot-hub.service
 run_root rm -f /etc/nginx/sites-enabled/iot-hub.conf
 run_root rm -f /etc/nginx/sites-available/iot-hub.conf
+run_root rm -f /etc/mosquitto/conf.d/iot-hub.conf
 run_root rm -f /usr/local/bin/iot-hub-backend
 run_root rm -f /usr/local/bin/iot-hub-flash-uf2
 run_root rm -f /usr/local/bin/iot-hub-pico-push

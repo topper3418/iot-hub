@@ -2,7 +2,7 @@
 # Directory: scripts/
 # Modified: 2026-04-08
 # Description: First-time installation of the IoT hub on a Raspberry Pi. Installs dependencies, creates user/dirs, builds, deploys, and starts services.
-# Uses: scripts/build_frontend.sh, scripts/build_backend.sh, scripts/deploy_frontend.sh, scripts/deploy_backend.sh, scripts/deploy_pico_assets.sh, scripts/flash_pico_uf2.sh, scripts/pico_push_manual_style.sh, scripts/read_host_wifi_creds.sh, deploy/systemd/iot-hub.service, deploy/nginx/iot-hub.conf
+# Uses: scripts/build_frontend.sh, scripts/build_backend.sh, scripts/deploy_frontend.sh, scripts/deploy_backend.sh, scripts/deploy_pico_assets.sh, scripts/flash_pico_uf2.sh, scripts/pico_push_manual_style.sh, scripts/read_host_wifi_creds.sh, deploy/systemd/iot-hub.service, deploy/nginx/iot-hub.conf, deploy/mosquitto/iot-hub.conf
 # Used by: none (run manually as a normal user on the Pi)
 set -euo pipefail
 
@@ -70,6 +70,9 @@ deploy_flash_helper
 
 run_root cp "$ROOT_DIR/deploy/systemd/iot-hub.service" /etc/systemd/system/iot-hub.service
 run_root cp "$ROOT_DIR/deploy/nginx/iot-hub.conf" /etc/nginx/sites-available/iot-hub.conf
+run_root mkdir -p /etc/mosquitto/conf.d
+run_root bash -c "grep -Eq '^[[:space:]]*include_dir[[:space:]]+/etc/mosquitto/conf.d([[:space:]]|$)' /etc/mosquitto/mosquitto.conf || echo 'include_dir /etc/mosquitto/conf.d' >> /etc/mosquitto/mosquitto.conf"
+run_root cp "$ROOT_DIR/deploy/mosquitto/iot-hub.conf" /etc/mosquitto/conf.d/iot-hub.conf
 run_root ln -sf /etc/nginx/sites-available/iot-hub.conf /etc/nginx/sites-enabled/iot-hub.conf
 run_root rm -f /etc/nginx/sites-enabled/default
 
