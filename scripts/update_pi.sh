@@ -2,7 +2,7 @@
 # Directory: scripts/
 # Modified: 2026-04-08
 # Description: Pulls the latest changes from git and selectively rebuilds and redeploys only the components that changed.
-# Uses: scripts/build_frontend.sh, scripts/build_backend.sh, scripts/deploy_frontend.sh, scripts/deploy_backend.sh, scripts/deploy_pico_assets.sh, scripts/flash_pico_uf2.sh, scripts/pico_push_manual_style.sh
+# Uses: scripts/build_frontend.sh, scripts/build_backend.sh, scripts/deploy_frontend.sh, scripts/deploy_backend.sh, scripts/deploy_pico_assets.sh, scripts/flash_pico_uf2.sh, scripts/pico_push_manual_style.sh, scripts/read_host_wifi_creds.sh
 # Used by: none (run manually as a normal user on the Pi)
 set -euo pipefail
 
@@ -24,8 +24,10 @@ SCRIPTS_DIR="$ROOT_DIR/scripts"
 deploy_flash_helper() {
   run_root install -m 0755 "$SCRIPTS_DIR/flash_pico_uf2.sh" /usr/local/bin/iot-hub-flash-uf2
   run_root install -m 0755 "$SCRIPTS_DIR/pico_push_manual_style.sh" /usr/local/bin/iot-hub-pico-push
+  run_root install -m 0755 "$SCRIPTS_DIR/read_host_wifi_creds.sh" /usr/local/bin/iot-hub-read-wifi-creds
   run_root bash -c "cat > /etc/sudoers.d/iot-hub-flash-pico <<'EOF'
 iotled ALL=(root) NOPASSWD: /usr/local/bin/iot-hub-flash-uf2 *
+iotled ALL=(root) NOPASSWD: /usr/local/bin/iot-hub-read-wifi-creds *
 EOF"
   run_root chmod 440 /etc/sudoers.d/iot-hub-flash-pico
 }
@@ -82,7 +84,7 @@ if echo "$CHANGED" | grep -q '^pico/'; then
   REDEPLOY_PICO=1
 fi
 
-if echo "$CHANGED" | grep -qE '^scripts/(flash_pico_uf2\.sh|pico_push_manual_style\.sh)$'; then
+if echo "$CHANGED" | grep -qE '^scripts/(flash_pico_uf2\.sh|pico_push_manual_style\.sh|read_host_wifi_creds\.sh)$'; then
   REDEPLOY_HELPERS=1
 fi
 
@@ -91,6 +93,10 @@ if [[ ! -x /usr/local/bin/iot-hub-flash-uf2 ]]; then
 fi
 
 if [[ ! -x /usr/local/bin/iot-hub-pico-push ]]; then
+  REDEPLOY_HELPERS=1
+fi
+
+if [[ ! -x /usr/local/bin/iot-hub-read-wifi-creds ]]; then
   REDEPLOY_HELPERS=1
 fi
 

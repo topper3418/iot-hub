@@ -21,6 +21,7 @@ import (
 
 const flashHelperPath = "/usr/local/bin/iot-hub-flash-uf2"
 const pushHelperPath = "/usr/local/bin/iot-hub-pico-push"
+const wifiCredsHelperPath = "/usr/local/bin/iot-hub-read-wifi-creds"
 
 type Options struct {
 	Status       Status
@@ -50,6 +51,22 @@ func Provision(opts Options) error {
 	}
 
 	ssid := strings.TrimSpace(opts.WiFiSSID)
+	password := strings.TrimSpace(opts.WiFiPassword)
+	if ssid == "" || password == "" {
+		emit(opts.Progress, "network", "Reading WiFi credentials from host config")
+		hostSSID, hostPassword, err := detectWiFiCredentialsViaHelper(ssid)
+		if err == nil {
+			if ssid == "" {
+				ssid = hostSSID
+			}
+			if password == "" {
+				password = hostPassword
+			}
+		} else {
+			emit(opts.Progress, "network", "Host credential helper unavailable, falling back to SSID auto-detect")
+		}
+	}
+
 	if ssid == "" {
 		emit(opts.Progress, "network", "Detecting WiFi SSID from Raspberry Pi")
 		autoSSID, err := detectSSID()
@@ -59,7 +76,9 @@ func Provision(opts Options) error {
 		ssid = autoSSID
 	}
 
-	password := strings.TrimSpace(opts.WiFiPassword)
+	if password == "" {
+		return errors.New("unable to detect WiFi password from host config; set IOTHUB_WIFI_PASSWORD")
+	}
 
 	if err := ensureMPRemote(); err != nil {
 		return err
@@ -195,6 +214,36 @@ func detectSSID() (string, error) {
 		return "", errors.New("detected empty WiFi SSID; set IOTHUB_WIFI_SSID")
 	}
 	return ssid, nil
+}
+
+func detectWiFiCredentialsViaHelper(ssidHint string) (string, string, error) {
+	if _, err := os.Stat(wifiCredsHelperPath); err != nil {
+		return "", "", fmt.Errorf("wifi credentials helper not found at %s", wifiCredsHelperPath)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "sudo", "-n", wifiCredsHelperPath, ssidHint)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		text := strings.TrimSpace(string(out))
+		if text == "" {
+			text = err.Error()
+		}
+		return "", "", fmt.Errorf("wifi credentials helper failed: %s", text)
+	}
+
+	var ssid, password string
+	for _, line := range strings.Split(string(out), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "SSID=") {
+			ssid = strings.TrimSpace(strings.TrimPrefix(line, "SSID="))
+		}
+		if strings.HasPrefix(line, "PASSWORD=") {
+			password = strings.TrimSpace(strings.TrimPrefix(line, "PASSWORD="))
+		}
+	}
+	return ssid, password, nil
 }
 
 func ensureMPRemote() error {
