@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+# Directory: scripts/
+# Modified: 2026-04-08
+# Description: Removes the deployed service, nginx config, and installed artifacts from the Raspberry Pi.
+# Uses: none
+# Used by: none (run manually as root on the Pi)
 set -euo pipefail
 
 if [[ "$EUID" -ne 0 ]]; then

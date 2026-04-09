@@ -1,3 +1,9 @@
+// Directory: frontend/src/
+// Modified: 2026-04-08
+// Description: Root application component. Defines layout, navigation, and top-level route structure.
+// Uses: frontend/src/pages/DeviceListPage.jsx, frontend/src/pages/RoomsPage.jsx, frontend/src/pages/DeviceControlPage.jsx
+// Used by: frontend/src/main.jsx
+
 import { Layout, Menu, Typography } from 'antd';
 import { BulbOutlined, HomeOutlined, PartitionOutlined } from '@ant-design/icons';
 import { Link, Route, Routes, useLocation } from 'react-router-dom';

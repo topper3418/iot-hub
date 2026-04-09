@@ -1,3 +1,9 @@
+// Directory: backend/internal/db/
+// Modified: 2026-04-08
+// Description: SQLite persistence layer. Handles device, LED strip, and room upsert and query operations.
+// Uses: backend/internal/model/types.go, backend/schema.sql
+// Used by: backend/internal/app/server.go
+
 package db
 
 import (

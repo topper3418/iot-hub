@@ -1,3 +1,9 @@
+// Directory: backend/internal/mqtt/
+// Modified: 2026-04-08
+// Description: Parses incoming MQTT status payloads into typed structs and builds validated outbound command payloads.
+// Uses: backend/internal/model/types.go
+// Used by: backend/internal/app/server.go
+
 package mqtt
 
 import (

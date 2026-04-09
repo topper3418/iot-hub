@@ -48,3 +48,14 @@ Used by: AI coding agents, contributors implementing features or refactors
 - Build backend after Go refactors.
 - Build frontend after API shape changes.
 - Preserve backward-compatible separation even when implementing LED-first behavior.
+
+## 9) File header convention
+- Every source code file must have a metadata header block at the top.
+- Use the appropriate comment syntax for the language (// for Go/JS, # for Python/Shell, -- for SQL, /* */ for CSS, <!-- --> for HTML).
+- Header format:
+  - Directory: path of the file's directory, relative to repo root, trailing slash
+  - Modified: date of last meaningful change (YYYY-MM-DD)
+  - Description: one-sentence summary of the file's purpose
+  - Uses: comma-separated list of source files this file directly imports or depends on
+  - Used by: comma-separated list of source files that import or invoke this file
+- Keep headers accurate when making changes; update Modified and Uses/Used by when adding imports.

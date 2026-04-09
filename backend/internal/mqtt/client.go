@@ -1,3 +1,9 @@
+// Directory: backend/internal/mqtt/
+// Modified: 2026-04-08
+// Description: MQTT broker connection, status topic subscription, and command topic publish.
+// Uses: none (no internal package imports)
+// Used by: backend/internal/app/server.go
+
 package mqtt
 
 import (

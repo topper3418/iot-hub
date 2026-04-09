@@ -1,3 +1,9 @@
+// Directory: frontend/src/
+// Modified: 2026-04-08
+// Description: API client module. Wraps fetch calls for all backend REST endpoints.
+// Uses: none
+// Used by: frontend/src/pages/DeviceListPage.jsx, frontend/src/pages/DeviceControlPage.jsx, frontend/src/pages/RoomsPage.jsx
+
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
 
 async function request(path, options = {}) {

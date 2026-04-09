@@ -1,3 +1,9 @@
+// Directory: frontend/src/pages/
+// Modified: 2026-04-08
+// Description: Rooms management page. Lists existing rooms and allows creating new ones.
+// Uses: frontend/src/api.js
+// Used by: frontend/src/App.jsx
+
 import { useEffect, useState } from 'react';
 import { Button, Card, Input, List, Space, Typography, message } from 'antd';
 import { api } from '../api';

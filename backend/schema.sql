@@ -1,3 +1,9 @@
+-- Directory: backend/
+-- Modified: 2026-04-08
+-- Description: SQLite schema initialization. Creates rooms, devices, and led_strips tables on startup.
+-- Uses: none
+-- Used by: backend/internal/db/db.go
+
 CREATE TABLE IF NOT EXISTS rooms (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL UNIQUE

@@ -1,3 +1,9 @@
+// Directory: frontend/src/pages/
+// Modified: 2026-04-08
+// Description: Device list page with inline LED controls, device rename, and room assignment.
+// Uses: frontend/src/api.js
+// Used by: frontend/src/App.jsx
+
 import { useEffect, useMemo, useState } from 'react';
 import { Button, Card, Input, Select, Space, Switch, Table, Typography, message } from 'antd';
 import { Link } from 'react-router-dom';

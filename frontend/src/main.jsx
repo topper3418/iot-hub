@@ -1,3 +1,9 @@
+// Directory: frontend/src/
+// Modified: 2026-04-08
+// Description: React entry point. Mounts the app into the DOM with BrowserRouter and StrictMode.
+// Uses: frontend/src/App.jsx, frontend/src/styles.css
+// Used by: frontend/index.html
+
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';

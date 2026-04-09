@@ -1,3 +1,9 @@
+// Directory: frontend/src/pages/
+// Modified: 2026-04-08
+// Description: Per-device LED control panel. Supports power, brightness, color, and pixel pin commands.
+// Uses: frontend/src/api.js
+// Used by: frontend/src/App.jsx
+
 import { useEffect, useMemo, useState } from 'react';
 import { Button, Card, ColorPicker, InputNumber, Space, Switch, Typography, message } from 'antd';
 import { useParams } from 'react-router-dom';

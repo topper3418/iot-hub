@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+# Directory: scripts/
+# Modified: 2026-04-08
+# Description: Interactive script that generates pico/device_config.py with WiFi, MQTT broker, and pixel pin values.
+# Uses: pico/device_config.py (output target)
+# Used by: none (run manually before flashing the Pico W)
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

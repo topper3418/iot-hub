@@ -1,3 +1,9 @@
+// Directory: backend/cmd/server/
+// Modified: 2026-04-08
+// Description: Entry point for the backend service. Initializes the app and blocks until a shutdown signal.
+// Uses: backend/internal/app/server.go
+// Used by: none (binary entry point)
+
 package main
 
 import (

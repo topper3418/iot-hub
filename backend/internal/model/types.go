@@ -1,3 +1,9 @@
+// Directory: backend/internal/model/
+// Modified: 2026-04-08
+// Description: Shared domain types used across the db, mqtt, and app packages.
+// Uses: none
+// Used by: backend/internal/db/db.go, backend/internal/mqtt/payload.go, backend/internal/app/server.go
+
 package model
 
 type Device struct {

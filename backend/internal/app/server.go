@@ -1,3 +1,9 @@
+// Directory: backend/internal/app/
+// Modified: 2026-04-08
+// Description: HTTP API routing, MQTT wiring, and orchestration layer. Bridges the db and mqtt packages.
+// Uses: backend/internal/db/db.go, backend/internal/model/types.go, backend/internal/mqtt/client.go, backend/internal/mqtt/payload.go
+// Used by: backend/cmd/server/main.go
+
 package app
 
 import (

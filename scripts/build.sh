@@ -1,16 +1,14 @@
 #!/usr/bin/env bash
+# Directory: scripts/
+# Modified: 2026-04-08
+# Description: Builds both the frontend and backend by delegating to build_frontend.sh and build_backend.sh.
+# Uses: scripts/build_frontend.sh, scripts/build_backend.sh
+# Used by: scripts/install_pi.sh, scripts/update_pi.sh
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SCRIPTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-pushd "$ROOT_DIR/frontend" >/dev/null
-npm install
-npm run build
-popd >/dev/null
+"$SCRIPTS_DIR/build_frontend.sh"
+"$SCRIPTS_DIR/build_backend.sh"
 
-pushd "$ROOT_DIR/backend" >/dev/null
-go mod tidy
-go build -o "$ROOT_DIR/dist/iot-hub-backend" ./cmd/server
-popd >/dev/null
-
-echo "Build complete. Binary: $ROOT_DIR/dist/iot-hub-backend"
+echo "Full build complete."

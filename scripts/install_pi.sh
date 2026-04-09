@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+# Directory: scripts/
+# Modified: 2026-04-08
+# Description: First-time installation of the IoT hub on a Raspberry Pi. Installs dependencies, creates user/dirs, builds, deploys, and starts services.
+# Uses: scripts/build_frontend.sh, scripts/build_backend.sh, scripts/deploy_frontend.sh, scripts/deploy_backend.sh, deploy/systemd/iot-hub.service, deploy/nginx/iot-hub.conf
+# Used by: none (run manually as root on the Pi)
 set -euo pipefail
 
 if [[ "$EUID" -ne 0 ]]; then
@@ -7,6 +12,7 @@ if [[ "$EUID" -ne 0 ]]; then
 fi
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SCRIPTS_DIR="$ROOT_DIR/scripts"
 
 apt-get update
 apt-get install -y nginx mosquitto mosquitto-clients sqlite3 golang-go nodejs npm
@@ -16,12 +22,11 @@ id -u iotled >/dev/null 2>&1 || useradd --system --create-home --shell /usr/sbin
 mkdir -p /opt/iot-hub/backend /opt/iot-hub/frontend /var/lib/iot-hub /var/log/iot-hub
 chown -R iotled:iotled /opt/iot-hub /var/lib/iot-hub /var/log/iot-hub
 
-# Build locally and place artifacts.
-"$ROOT_DIR/scripts/build.sh"
+"$SCRIPTS_DIR/build_frontend.sh"
+"$SCRIPTS_DIR/build_backend.sh"
 
-install -m 0755 "$ROOT_DIR/dist/iot-hub-backend" /usr/local/bin/iot-hub-backend
-rsync -a --delete "$ROOT_DIR/frontend/dist/" /opt/iot-hub/frontend/dist/
-cp "$ROOT_DIR/backend/schema.sql" /opt/iot-hub/backend/schema.sql
+"$SCRIPTS_DIR/deploy_frontend.sh"
+"$SCRIPTS_DIR/deploy_backend.sh"
 
 cp "$ROOT_DIR/deploy/systemd/iot-hub.service" /etc/systemd/system/iot-hub.service
 cp "$ROOT_DIR/deploy/nginx/iot-hub.conf" /etc/nginx/sites-available/iot-hub.conf

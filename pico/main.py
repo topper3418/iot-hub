@@ -1,3 +1,9 @@
+# Directory: pico/
+# Modified: 2026-04-08
+# Description: MicroPython LED strip firmware. Connects to WiFi and MQTT, publishes status, and handles commands.
+# Uses: pico/device_config.py
+# Used by: none (runs on Pico W as entry point)
+
 import network
 import time
 import json
