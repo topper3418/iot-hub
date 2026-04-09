@@ -55,13 +55,12 @@ git pull
 NEW_COMMIT="$(git rev-parse HEAD)"
 
 if [[ "$OLD_COMMIT" == "$NEW_COMMIT" ]]; then
-  echo "Already up to date. Nothing to do."
-  exit 0
+  echo "Already up to date. Checking deployment/runtime prerequisites."
+  CHANGED=""
+else
+  echo "Updated to commit: $NEW_COMMIT"
+  CHANGED="$(git diff --name-only "$OLD_COMMIT" "$NEW_COMMIT")"
 fi
-
-echo "Updated to commit: $NEW_COMMIT"
-
-CHANGED="$(git diff --name-only "$OLD_COMMIT" "$NEW_COMMIT")"
 
 REBUILD_FRONTEND=0
 REBUILD_BACKEND=0
