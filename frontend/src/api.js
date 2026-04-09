@@ -27,5 +27,6 @@ export const api = {
   createRoom: (name) => request('/api/rooms', { method: 'POST', body: JSON.stringify({ name }) }),
   picoStatus: () => request('/api/pico/status'),
   picoProvisionState: () => request('/api/pico/provision/state'),
+  picoProvisionReset: () => request('/api/pico/provision/reset', { method: 'POST' }),
   picoProvision: (body) => request('/api/pico/provision', { method: 'POST', body: JSON.stringify(body) })
 };

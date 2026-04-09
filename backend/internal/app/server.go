@@ -41,6 +41,9 @@ type PicoProvisionState struct {
 	Error      string `json:"error,omitempty"`
 	UpdatedAt  string `json:"updatedAt"`
 	LastResult string `json:"lastResult"`
+	Attempt    int    `json:"attempt"`
+	StartedAt  string `json:"startedAt,omitempty"`
+	FinishedAt string `json:"finishedAt,omitempty"`
 }
 
 func New() (*Application, error) {
@@ -78,6 +81,7 @@ func New() (*Application, error) {
 	mux.HandleFunc("GET /api/pico/status", app.handlePicoStatus)
 	mux.HandleFunc("GET /api/pico/provision/state", app.handlePicoProvisionState)
 	mux.HandleFunc("POST /api/pico/provision", app.handlePicoProvision)
+	mux.HandleFunc("POST /api/pico/provision/reset", app.handlePicoProvisionReset)
 
 	app.pico = provision.NewMonitor()
 	app.provState = PicoProvisionState{Stage: "idle", Detail: "Waiting for configure request", UpdatedAt: time.Now().UTC().Format(time.RFC3339), LastResult: "none"}
@@ -229,6 +233,22 @@ func (a *Application) handlePicoProvisionState(w http.ResponseWriter, _ *http.Re
 	writeJSON(w, state)
 }
 
+func (a *Application) handlePicoProvisionReset(w http.ResponseWriter, _ *http.Request) {
+	a.provisionMu.Lock()
+	if a.provState.Running {
+		a.provisionMu.Unlock()
+		http.Error(w, "cannot reset while provisioning is running", http.StatusConflict)
+		return
+	}
+	a.provState.Stage = "idle"
+	a.provState.Detail = "Waiting for configure request"
+	a.provState.Error = ""
+	a.provState.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+	a.provState.FinishedAt = ""
+	a.provisionMu.Unlock()
+	writeJSON(w, map[string]string{"status": "reset"})
+}
+
 func (a *Application) handlePicoProvision(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		PixelPin *int `json:"pixelPin"`
@@ -248,7 +268,17 @@ func (a *Application) handlePicoProvision(w http.ResponseWriter, r *http.Request
 		http.Error(w, "provisioning already in progress", http.StatusConflict)
 		return
 	}
-	a.provState = PicoProvisionState{Running: true, Stage: "queued", Detail: "Provisioning request accepted", UpdatedAt: time.Now().UTC().Format(time.RFC3339), LastResult: a.provState.LastResult}
+	now := time.Now().UTC().Format(time.RFC3339)
+	a.provState = PicoProvisionState{
+		Running:    true,
+		Stage:      "queued",
+		Detail:     "Provisioning request accepted",
+		UpdatedAt:  now,
+		LastResult: a.provState.LastResult,
+		Attempt:    a.provState.Attempt + 1,
+		StartedAt:  now,
+		FinishedAt: "",
+	}
 	a.provisionMu.Unlock()
 
 	status := a.pico.GetStatus()
@@ -286,30 +316,43 @@ func (a *Application) runProvision(opts provision.Options) {
 		return
 	}
 	a.provisionMu.Lock()
+	attempt := a.provState.Attempt
+	startedAt := a.provState.StartedAt
 	a.provState = PicoProvisionState{
 		Running:    false,
 		Stage:      "done",
 		Detail:     "Provisioning completed successfully",
 		UpdatedAt:  time.Now().UTC().Format(time.RFC3339),
 		LastResult: "success",
+		Attempt:    attempt,
+		StartedAt:  startedAt,
+		FinishedAt: time.Now().UTC().Format(time.RFC3339),
 	}
 	a.provisionMu.Unlock()
 }
 
 func (a *Application) setProvisionProgress(stage, detail string) {
 	a.provisionMu.Lock()
+	attempt := a.provState.Attempt
+	startedAt := a.provState.StartedAt
+	lastResult := a.provState.LastResult
 	a.provState = PicoProvisionState{
 		Running:    true,
 		Stage:      stage,
 		Detail:     detail,
 		UpdatedAt:  time.Now().UTC().Format(time.RFC3339),
-		LastResult: a.provState.LastResult,
+		LastResult: lastResult,
+		Attempt:    attempt,
+		StartedAt:  startedAt,
+		FinishedAt: "",
 	}
 	a.provisionMu.Unlock()
 }
 
 func (a *Application) setProvisionError(detail string) {
 	a.provisionMu.Lock()
+	attempt := a.provState.Attempt
+	startedAt := a.provState.StartedAt
 	a.provState = PicoProvisionState{
 		Running:    false,
 		Stage:      "error",
@@ -317,6 +360,9 @@ func (a *Application) setProvisionError(detail string) {
 		Error:      detail,
 		UpdatedAt:  time.Now().UTC().Format(time.RFC3339),
 		LastResult: "error",
+		Attempt:    attempt,
+		StartedAt:  startedAt,
+		FinishedAt: time.Now().UTC().Format(time.RFC3339),
 	}
 	a.provisionMu.Unlock()
 }

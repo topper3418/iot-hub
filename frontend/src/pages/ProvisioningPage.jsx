@@ -5,7 +5,7 @@
 // Used by: frontend/src/App.jsx
 
 import { useEffect, useMemo, useState } from 'react';
-import { Alert, Button, Card, InputNumber, Modal, Space, Steps, Typography, message } from 'antd';
+import { Alert, Button, Card, Descriptions, InputNumber, Modal, Space, Steps, Tag, Typography, message } from 'antd';
 import { api } from '../api';
 
 const STAGE_INDEX = {
@@ -26,7 +26,15 @@ const STAGE_INDEX = {
 
 export default function ProvisioningPage() {
   const [picoStatus, setPicoStatus] = useState({ state: 'none', connected: false });
-  const [provState, setProvState] = useState({ running: false, stage: 'idle', detail: 'Waiting for configure request', lastResult: 'none' });
+  const [provState, setProvState] = useState({
+    running: false,
+    stage: 'idle',
+    detail: 'Waiting for configure request',
+    lastResult: 'none',
+    attempt: 0,
+    startedAt: '',
+    finishedAt: ''
+  });
   const [showModal, setShowModal] = useState(false);
   const [pixelPin, setPixelPin] = useState(16);
   const [starting, setStarting] = useState(false);
@@ -92,8 +100,27 @@ export default function ProvisioningPage() {
     }
   }
 
+  async function resetProvisionState() {
+    try {
+      await api.picoProvisionReset();
+      const state = await api.picoProvisionState();
+      setProvState(state);
+      message.success('Provisioning status cleared');
+    } catch (err) {
+      message.error(err.message);
+    }
+  }
+
   const currentStep = STAGE_INDEX[provState.stage] ?? 0;
   const overallStatus = provState.stage === 'error' ? 'error' : provState.stage === 'done' ? 'finish' : 'process';
+
+  const runStatusTag = provState.running
+    ? { color: 'processing', text: 'Running' }
+    : provState.stage === 'error'
+      ? { color: 'error', text: 'Failed' }
+      : provState.stage === 'done'
+        ? { color: 'success', text: 'Succeeded' }
+        : { color: 'default', text: 'Idle' };
 
   return (
     <Card className="control-card" title="Pico Provisioning">
@@ -110,8 +137,38 @@ export default function ProvisioningPage() {
 
         <Card size="small" title="Provisioning Progress">
           <Space direction="vertical" size={12} style={{ width: '100%' }}>
+            <Descriptions size="small" column={1} bordered>
+              <Descriptions.Item label="Run status">
+                <Tag color={runStatusTag.color}>{runStatusTag.text}</Tag>
+              </Descriptions.Item>
+              <Descriptions.Item label="Attempt">
+                {provState.attempt > 0 ? `#${provState.attempt}` : 'None yet'}
+              </Descriptions.Item>
+              <Descriptions.Item label="Started at">
+                {provState.startedAt || 'Not started'}
+              </Descriptions.Item>
+              <Descriptions.Item label="Finished at">
+                {provState.finishedAt || 'Not finished'}
+              </Descriptions.Item>
+              <Descriptions.Item label="Last update">
+                {provState.updatedAt || 'Unknown'}
+              </Descriptions.Item>
+            </Descriptions>
+
             <Typography.Text strong>{provState.detail || 'Waiting for configure request'}</Typography.Text>
-            {provState.error ? <Typography.Text type="danger">{provState.error}</Typography.Text> : null}
+            {provState.error ? (
+              <Alert
+                type="error"
+                showIcon
+                message={`Attempt #${provState.attempt || '?'} failed`}
+                description={provState.error}
+                action={
+                  <Button size="small" onClick={resetProvisionState} disabled={provState.running}>
+                    Clear
+                  </Button>
+                }
+              />
+            ) : null}
             <Steps
               current={currentStep}
               status={overallStatus}
@@ -132,7 +189,7 @@ export default function ProvisioningPage() {
         </Card>
 
         <Typography.Text type="secondary">
-          Flow: plug in Pico, click Configure, wait for Done, then disconnect and power it normally.
+          Flow: plug in Pico, click Configure, watch the active attempt status and timestamps, then disconnect after Succeeded.
         </Typography.Text>
       </Space>
 
