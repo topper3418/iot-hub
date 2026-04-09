@@ -1,11 +1,11 @@
 // Directory: frontend/src/pages/
 // Modified: 2026-04-08
-// Description: Device list page with inline LED controls, device rename, and room assignment.
+// Description: Device list page with inline LED controls, device rename, room assignment, and Pico USB status.
 // Uses: frontend/src/api.js
 // Used by: frontend/src/App.jsx
 
 import { useEffect, useMemo, useState } from 'react';
-import { Button, Card, Input, Select, Space, Switch, Table, Typography, message } from 'antd';
+import { Alert, Button, Card, Input, Select, Space, Switch, Table, Typography, message } from 'antd';
 import { Link } from 'react-router-dom';
 import { api } from '../api';
 
@@ -13,6 +13,7 @@ export default function DeviceListPage() {
   const [devices, setDevices] = useState([]);
   const [rooms, setRooms] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [picoStatus, setPicoStatus] = useState({ state: 'none', connected: false });
 
   async function load() {
     setLoading(true);
@@ -32,6 +33,52 @@ export default function DeviceListPage() {
     const t = setInterval(load, 5000);
     return () => clearInterval(t);
   }, []);
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function loadPicoStatus() {
+      try {
+        const status = await api.picoStatus();
+        if (mounted) {
+          setPicoStatus(status);
+        }
+      } catch {
+        if (mounted) {
+          setPicoStatus({ state: 'none', connected: false });
+        }
+      }
+    }
+
+    loadPicoStatus();
+    const t = setInterval(loadPicoStatus, 2000);
+    return () => {
+      mounted = false;
+      clearInterval(t);
+    };
+  }, []);
+
+  function picoAlert() {
+    if (picoStatus.state === 'bootsel') {
+      return {
+        type: 'success',
+        message: 'Pico in BOOTSEL mode detected',
+        description: 'Ready for first-time flash. Next step is provisioning upload wiring.'
+      };
+    }
+    if (picoStatus.state === 'micropython') {
+      return {
+        type: 'info',
+        message: 'Pico detected in MicroPython mode',
+        description: picoStatus.serialPort ? `Serial: ${picoStatus.serialPort}` : 'Serial interface available'
+      };
+    }
+    return {
+      type: 'warning',
+      message: 'No Pico detected',
+      description: 'Hold BOOTSEL while plugging in to enter flash mode.'
+    };
+  }
 
   const roomOptions = useMemo(
     () => rooms.map((r) => ({ value: r.id, label: r.name })),
@@ -130,6 +177,7 @@ export default function DeviceListPage() {
 
   return (
     <Card className="control-card" title="Devices">
+      <Alert style={{ marginBottom: 16 }} showIcon {...picoAlert()} />
       <Table
         rowKey="mac"
         loading={loading}

@@ -1,7 +1,7 @@
 // Directory: backend/internal/app/
 // Modified: 2026-04-08
 // Description: HTTP API routing, MQTT wiring, and orchestration layer. Bridges the db and mqtt packages.
-// Uses: backend/internal/db/db.go, backend/internal/model/types.go, backend/internal/mqtt/client.go, backend/internal/mqtt/payload.go
+// Uses: backend/internal/db/db.go, backend/internal/model/types.go, backend/internal/mqtt/client.go, backend/internal/mqtt/payload.go, backend/internal/provision/monitor.go
 // Used by: backend/cmd/server/main.go
 
 package app
@@ -20,12 +20,14 @@ import (
 	"iot-hub/backend/internal/db"
 	"iot-hub/backend/internal/model"
 	"iot-hub/backend/internal/mqtt"
+	"iot-hub/backend/internal/provision"
 )
 
 type Application struct {
 	store      *db.Store
 	mqttClient *mqtt.Client
 	httpServer *http.Server
+	pico       *provision.Monitor
 }
 
 func New() (*Application, error) {
@@ -60,6 +62,9 @@ func New() (*Application, error) {
 	mux.HandleFunc("POST /api/devices/", app.handleCommandDevice)
 	mux.HandleFunc("GET /api/rooms", app.handleListRooms)
 	mux.HandleFunc("POST /api/rooms", app.handleCreateRoom)
+	mux.HandleFunc("GET /api/pico/status", app.handlePicoStatus)
+
+	app.pico = provision.NewMonitor()
 
 	if info, err := os.Stat(staticDir); err == nil && info.IsDir() {
 		fileServer := http.FileServer(http.Dir(staticDir))
@@ -86,6 +91,7 @@ func New() (*Application, error) {
 }
 
 func (a *Application) Start() error {
+	a.pico.Start()
 	go func() {
 		log.Printf("http server listening on %s", a.httpServer.Addr)
 		if err := a.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
@@ -99,6 +105,7 @@ func (a *Application) Stop() {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	_ = a.httpServer.Shutdown(ctx)
+	a.pico.Stop()
 	a.mqttClient.Close()
 	_ = a.store.Close()
 }
@@ -193,6 +200,10 @@ func (a *Application) handleCreateRoom(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, map[string]string{"status": "ok"})
+}
+
+func (a *Application) handlePicoStatus(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, a.pico.GetStatus())
 }
 
 func writeJSON(w http.ResponseWriter, v any) {
