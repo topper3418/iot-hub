@@ -90,15 +90,26 @@ def on_message(topic, msg):
         log("MQTT command received on " + topic.decode())
         log("Raw payload: " + msg.decode())
         cmd = json.loads(msg)
-        if "power" in cmd:
-            status["power"] = bool(cmd["power"])
-        if "brightness" in cmd:
-            status["brightness"] = int(cmd["brightness"])
-        if "color" in cmd:
-            status["color"] = str(cmd["color"])
-        if "pixelPin" in cmd:
-            status["pixelPin"] = int(cmd["pixelPin"])
-            log("pixelPin command received: " + str(status["pixelPin"]) + " (hardware pin remains configured at boot)")
+        if "power" in cmd and cmd["power"] is not None:
+            if isinstance(cmd["power"], bool):
+                status["power"] = cmd["power"]
+            elif isinstance(cmd["power"], (int, float)):
+                status["power"] = cmd["power"] != 0
+
+        if "brightness" in cmd and cmd["brightness"] is not None:
+            b = int(cmd["brightness"])
+            status["brightness"] = max(0, min(255, b))
+
+        if "color" in cmd and cmd["color"] is not None:
+            c = str(cmd["color"]).strip()
+            if c:
+                status["color"] = c
+
+        if "pixelPin" in cmd and cmd["pixelPin"] is not None:
+            p = int(cmd["pixelPin"])
+            if p >= 0:
+                status["pixelPin"] = p
+                log("pixelPin command received: " + str(status["pixelPin"]) + " (hardware pin remains configured at boot)")
         apply_led()
     except Exception as e:
         print("[pico] cmd parse error", e)

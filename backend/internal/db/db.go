@@ -23,6 +23,25 @@ type Store struct {
 	db *sql.DB
 }
 
+func (s *Store) execWrite(query string, args ...any) (sql.Result, error) {
+	const maxAttempts = 6
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		res, err := s.db.Exec(query, args...)
+		if err == nil {
+			return res, nil
+		}
+		msg := strings.ToLower(err.Error())
+		if !strings.Contains(msg, "database is locked") && !strings.Contains(msg, "sqlite_busy") {
+			return nil, err
+		}
+		if attempt == maxAttempts {
+			return nil, err
+		}
+		time.Sleep(time.Duration(attempt) * 120 * time.Millisecond)
+	}
+	return nil, fmt.Errorf("write failed")
+}
+
 func Open(path string) (*Store, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, fmt.Errorf("create db directory: %w", err)
@@ -31,6 +50,21 @@ func Open(path string) (*Store, error) {
 	db, err := sql.Open("sqlite", path)
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite: %w", err)
+	}
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
+
+	if _, err := db.Exec(`PRAGMA journal_mode = WAL;`); err != nil {
+		return nil, fmt.Errorf("set journal_mode: %w", err)
+	}
+	if _, err := db.Exec(`PRAGMA busy_timeout = 5000;`); err != nil {
+		return nil, fmt.Errorf("set busy_timeout: %w", err)
+	}
+	if _, err := db.Exec(`PRAGMA foreign_keys = ON;`); err != nil {
+		return nil, fmt.Errorf("set foreign_keys: %w", err)
+	}
+	if _, err := db.Exec(`PRAGMA synchronous = NORMAL;`); err != nil {
+		return nil, fmt.Errorf("set synchronous: %w", err)
 	}
 
 	schema, err := os.ReadFile("schema.sql")
@@ -66,7 +100,7 @@ func (s *Store) UpsertDevice(mac, name, kind string) (int64, error) {
 		updated_at = excluded.updated_at
 	`
 
-	if _, err := s.db.Exec(stmt, mac, name, kind, now, "", now, now); err != nil {
+	if _, err := s.execWrite(stmt, mac, name, kind, now, "", now, now); err != nil {
 		return 0, fmt.Errorf("upsert device: %w", err)
 	}
 
@@ -107,7 +141,7 @@ func (s *Store) UpsertLEDStrip(deviceID int64, status model.LEDStatusUpdate) err
 		pixel_pin = excluded.pixel_pin,
 		updated_at = excluded.updated_at
 	`
-	_, err := s.db.Exec(ledStmt, deviceID, boolToInt(power), brightness, color, pixelPin, now)
+	_, err := s.execWrite(ledStmt, deviceID, boolToInt(power), brightness, color, pixelPin, now)
 	return err
 }
 
@@ -210,12 +244,12 @@ func (s *Store) ListRooms() ([]model.Room, error) {
 
 func (s *Store) UpdateDevice(mac string, patch model.DevicePatch) error {
 	if patch.Name != nil {
-		if _, err := s.db.Exec(`UPDATE devices SET name = ?, updated_at = ? WHERE mac = ?`, strings.TrimSpace(*patch.Name), time.Now().UTC().Format(time.RFC3339), mac); err != nil {
+		if _, err := s.execWrite(`UPDATE devices SET name = ?, updated_at = ? WHERE mac = ?`, strings.TrimSpace(*patch.Name), time.Now().UTC().Format(time.RFC3339), mac); err != nil {
 			return err
 		}
 	}
 	if patch.RoomID != nil {
-		if _, err := s.db.Exec(`UPDATE devices SET room_id = ?, updated_at = ? WHERE mac = ?`, *patch.RoomID, time.Now().UTC().Format(time.RFC3339), mac); err != nil {
+		if _, err := s.execWrite(`UPDATE devices SET room_id = ?, updated_at = ? WHERE mac = ?`, *patch.RoomID, time.Now().UTC().Format(time.RFC3339), mac); err != nil {
 			return err
 		}
 	}
@@ -237,7 +271,7 @@ func (s *Store) ApplyLEDCommand(mac string, cmd model.LEDCommand) error {
 		return nil
 	}
 
-	if _, err := s.db.Exec(
+	if _, err := s.execWrite(
 		`INSERT OR IGNORE INTO led_strips (device_id, power, brightness, color, pixel_pin, pixel_count, updated_at) VALUES (?, 0, 0, '#000000', 0, 255, ?)`,
 		deviceID,
 		now,
@@ -245,7 +279,7 @@ func (s *Store) ApplyLEDCommand(mac string, cmd model.LEDCommand) error {
 		return err
 	}
 
-	_, err := s.db.Exec(`
+	_, err := s.execWrite(`
 	UPDATE led_strips
 	SET power = COALESCE(?, power),
 	    brightness = COALESCE(?, brightness),
@@ -265,7 +299,7 @@ func (s *Store) ApplyLEDCommand(mac string, cmd model.LEDCommand) error {
 }
 
 func (s *Store) UpsertRoom(name string) error {
-	_, err := s.db.Exec(`INSERT OR IGNORE INTO rooms (name) VALUES (?)`, strings.TrimSpace(name))
+	_, err := s.execWrite(`INSERT OR IGNORE INTO rooms (name) VALUES (?)`, strings.TrimSpace(name))
 	return err
 }
 

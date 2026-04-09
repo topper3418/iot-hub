@@ -37,10 +37,10 @@ type DevicePatch struct {
 }
 
 type LEDCommand struct {
-	Power      *bool   `json:"power"`
-	Brightness *int    `json:"brightness"`
-	Color      *string `json:"color"`
-	PixelPin   *int    `json:"pixelPin"`
+	Power      *bool   `json:"power,omitempty"`
+	Brightness *int    `json:"brightness,omitempty"`
+	Color      *string `json:"color,omitempty"`
+	PixelPin   *int    `json:"pixelPin,omitempty"`
 }
 
 type LEDStatusUpdate struct {
