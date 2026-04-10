@@ -10,40 +10,41 @@ import { useNavigate } from 'react-router-dom';
 import { api } from '../api';
 
 const OFFLINE_AFTER_MS = 10_000;
+const POLL_MS = 2000;
 
-function msSince(value, nowMs) {
+function msSince(value) {
   if (!value) return Number.POSITIVE_INFINITY;
   const ts = Date.parse(value);
   if (Number.isNaN(ts)) return Number.POSITIVE_INFINITY;
-  return Math.max(0, nowMs - ts);
+  return Math.max(0, Date.now() - ts);
 }
 
 export default function DeviceListPage() {
   const navigate = useNavigate();
   const [devices, setDevices] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [nowMs, setNowMs] = useState(Date.now());
+  const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
 
-  async function load() {
-    setLoading(true);
+  async function load(silent = false) {
+    if (!silent) {
+      setLoading(true);
+    }
     try {
       const d = await api.listDevices();
       setDevices(d);
+      setHasLoadedOnce(true);
     } catch (err) {
       message.error(err.message);
     } finally {
-      setLoading(false);
+      if (!silent) {
+        setLoading(false);
+      }
     }
   }
 
   useEffect(() => {
     load();
-    const t = setInterval(load, 5000);
-    return () => clearInterval(t);
-  }, []);
-
-  useEffect(() => {
-    const t = setInterval(() => setNowMs(Date.now()), 1000);
+    const t = setInterval(() => load(true), POLL_MS);
     return () => clearInterval(t);
   }, []);
 
@@ -59,14 +60,13 @@ export default function DeviceListPage() {
   return (
     <Card className="control-card" title="Devices">
       <List
-        loading={loading}
+        loading={loading && !hasLoadedOnce}
         locale={{ emptyText: <Empty description="No devices seen yet" /> }}
         grid={{ gutter: 16, xs: 1, sm: 1, md: 2, lg: 3 }}
         dataSource={devices}
         renderItem={(device) => {
-          const ageMs = msSince(device.lastSeen, nowMs);
+          const ageMs = msSince(device.lastSeen);
           const isOnline = ageMs <= OFFLINE_AFTER_MS;
-          const seenLabel = Number.isFinite(ageMs) ? `${Math.floor(ageMs / 1000)}s ago` : 'never';
           return (
             <List.Item>
               <Card
@@ -78,7 +78,6 @@ export default function DeviceListPage() {
                 <Space direction="vertical" size={8} style={{ width: '100%' }}>
                   <Space>
                     <Tag color={isOnline ? 'green' : 'red'}>{isOnline ? 'Connected' : 'Disconnected'}</Tag>
-                    <Typography.Text type="secondary">Last seen {seenLabel}</Typography.Text>
                   </Space>
                   <Space align="center" onClick={(e) => e.stopPropagation()}>
                     <Typography.Text>Power</Typography.Text>

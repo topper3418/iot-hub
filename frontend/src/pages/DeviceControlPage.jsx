@@ -5,21 +5,23 @@
 // Used by: frontend/src/App.jsx
 
 import { useEffect, useMemo, useState } from 'react';
-import { Button, Card, ColorPicker, Input, Select, Slider, Space, Switch, Typography, message } from 'antd';
+import { Button, Card, Input, Select, Slider, Space, Switch, Typography, message } from 'antd';
 import { useParams } from 'react-router-dom';
 import { api } from '../api';
 
 const OFFLINE_AFTER_MS = 10_000;
+const POLL_MS = 2000;
+const DISCRETE_COLORS = [
+  '#FF3B30', '#FF9500', '#FFCC00', '#34C759', '#00C7BE', '#32ADE6', '#007AFF', '#5856D6',
+  '#AF52DE', '#FF2D55', '#FFFFFF', '#C7C7CC', '#8E8E93', '#636366', '#3A3A3C', '#000000'
+];
 
-function connectionState(lastSeen, nowMs) {
-  if (!lastSeen) return { online: false, text: 'never' };
+function isOnline(lastSeen) {
+  if (!lastSeen) return false;
   const ts = Date.parse(lastSeen);
-  if (Number.isNaN(ts)) return { online: false, text: 'unknown' };
-  const ageMs = Math.max(0, nowMs - ts);
-  return {
-    online: ageMs <= OFFLINE_AFTER_MS,
-    text: `${Math.floor(ageMs / 1000)}s ago`
-  };
+  if (Number.isNaN(ts)) return false;
+  const ageMs = Math.max(0, Date.now() - ts);
+  return ageMs <= OFFLINE_AFTER_MS;
 }
 
 export default function DeviceControlPage() {
@@ -32,31 +34,27 @@ export default function DeviceControlPage() {
   const [name, setName] = useState('');
   const [roomId, setRoomId] = useState(null);
   const [editingDetails, setEditingDetails] = useState(false);
-  const [nowMs, setNowMs] = useState(Date.now());
 
-  async function loadDetails() {
+  async function loadDetails(silent = false) {
     try {
       const [all, roomList] = await Promise.all([api.listDevices(), api.listRooms()]);
       setDevices(all);
       setRooms(roomList);
     } catch (err) {
-      message.error(err.message);
+      if (!silent) {
+        message.error(err.message);
+      }
     }
   }
 
   useEffect(() => {
     loadDetails();
-    const t = setInterval(loadDetails, 5000);
+    const t = setInterval(() => loadDetails(true), POLL_MS);
     return () => clearInterval(t);
   }, [mac]);
 
-  useEffect(() => {
-    const t = setInterval(() => setNowMs(Date.now()), 1000);
-    return () => clearInterval(t);
-  }, []);
-
   const device = useMemo(() => devices.find((d) => d.mac === mac), [devices, mac]);
-  const conn = useMemo(() => connectionState(device?.lastSeen, nowMs), [device?.lastSeen, nowMs]);
+  const connected = isOnline(device?.lastSeen);
 
   useEffect(() => {
     if (!device) return;
@@ -107,7 +105,7 @@ export default function DeviceControlPage() {
             <Space direction="vertical" size={10} style={{ width: '100%' }}>
               <Typography.Text><Typography.Text strong>Name:</Typography.Text> {device.name || 'Unnamed'}</Typography.Text>
               <Typography.Text><Typography.Text strong>Room:</Typography.Text> {device.roomName || 'Unassigned'}</Typography.Text>
-              <Typography.Text><Typography.Text strong>Status:</Typography.Text> {conn.online ? 'Connected' : 'Disconnected'} (last seen {conn.text})</Typography.Text>
+              <Typography.Text><Typography.Text strong>Status:</Typography.Text> {connected ? 'Connected' : 'Disconnected'}</Typography.Text>
               <Button onClick={() => setEditingDetails(true)}>Edit</Button>
             </Space>
           ) : (
@@ -149,19 +147,27 @@ export default function DeviceControlPage() {
         </Space>
         <Space>
           <Typography.Text>Color</Typography.Text>
-          <ColorPicker
-            value={colorHex}
-            onChange={(_, hex) => {
-              setColorHex(hex);
-            }}
-            onChangeComplete={(v) => {
-              const hex = v.toHexString();
-              setColorHex(hex);
-              send({ color: hex });
-            }}
-            showText
-          />
         </Space>
+        <Space size={8} wrap>
+          {DISCRETE_COLORS.map((hex) => (
+            <Button
+              key={hex}
+              shape="circle"
+              size="small"
+              title={hex}
+              onClick={() => {
+                setColorHex(hex);
+                send({ color: hex });
+              }}
+              style={{
+                backgroundColor: hex,
+                borderColor: colorHex.toLowerCase() === hex.toLowerCase() ? '#1f7a56' : '#d9d9d9',
+                borderWidth: colorHex.toLowerCase() === hex.toLowerCase() ? 2 : 1
+              }}
+            />
+          ))}
+        </Space>
+        <Typography.Text type="secondary">Selected color: {colorHex}</Typography.Text>
       </Space>
     </Card>
   );
