@@ -9,6 +9,19 @@ import { Button, Card, ColorPicker, Input, Select, Slider, Space, Switch, Typogr
 import { useParams } from 'react-router-dom';
 import { api } from '../api';
 
+const OFFLINE_AFTER_MS = 10_000;
+
+function connectionState(lastSeen, nowMs) {
+  if (!lastSeen) return { online: false, text: 'never' };
+  const ts = Date.parse(lastSeen);
+  if (Number.isNaN(ts)) return { online: false, text: 'unknown' };
+  const ageMs = Math.max(0, nowMs - ts);
+  return {
+    online: ageMs <= OFFLINE_AFTER_MS,
+    text: `${Math.floor(ageMs / 1000)}s ago`
+  };
+}
+
 export default function DeviceControlPage() {
   const { mac } = useParams();
   const [devices, setDevices] = useState([]);
@@ -18,20 +31,32 @@ export default function DeviceControlPage() {
   const [colorHex, setColorHex] = useState('#000000');
   const [name, setName] = useState('');
   const [roomId, setRoomId] = useState(null);
+  const [editingDetails, setEditingDetails] = useState(false);
+  const [nowMs, setNowMs] = useState(Date.now());
+
+  async function loadDetails() {
+    try {
+      const [all, roomList] = await Promise.all([api.listDevices(), api.listRooms()]);
+      setDevices(all);
+      setRooms(roomList);
+    } catch (err) {
+      message.error(err.message);
+    }
+  }
 
   useEffect(() => {
-    (async () => {
-      try {
-        const [all, roomList] = await Promise.all([api.listDevices(), api.listRooms()]);
-        setDevices(all);
-        setRooms(roomList);
-      } catch (err) {
-        message.error(err.message);
-      }
-    })();
+    loadDetails();
+    const t = setInterval(loadDetails, 5000);
+    return () => clearInterval(t);
   }, [mac]);
 
+  useEffect(() => {
+    const t = setInterval(() => setNowMs(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+
   const device = useMemo(() => devices.find((d) => d.mac === mac), [devices, mac]);
+  const conn = useMemo(() => connectionState(device?.lastSeen, nowMs), [device?.lastSeen, nowMs]);
 
   useEffect(() => {
     if (!device) return;
@@ -55,12 +80,19 @@ export default function DeviceControlPage() {
   async function saveDeviceDetails() {
     try {
       await api.updateDevice(mac, { name: name.trim(), roomId });
-      const all = await api.listDevices();
-      setDevices(all);
+      await loadDetails();
+      setEditingDetails(false);
       message.success('Device details saved');
     } catch (err) {
       message.error(err.message);
     }
+  }
+
+  function cancelEditDetails() {
+    if (!device) return;
+    setName(device.name || '');
+    setRoomId(device.roomId ?? null);
+    setEditingDetails(false);
   }
 
   if (!device) {
@@ -71,16 +103,28 @@ export default function DeviceControlPage() {
     <Card className="control-card" title={`Device Control: ${device.name}`}>
       <Space direction="vertical" size="large" style={{ width: '100%' }}>
         <Card size="small" title="Device Details">
-          <Space direction="vertical" size={12} style={{ width: '100%' }}>
-            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Device name" />
-            <Select
-              value={roomId}
-              options={rooms.map((r) => ({ value: r.id, label: r.name }))}
-              placeholder="Select room"
-              onChange={(v) => setRoomId(v)}
-            />
-            <Button type="primary" onClick={saveDeviceDetails}>Save details</Button>
-          </Space>
+          {!editingDetails ? (
+            <Space direction="vertical" size={10} style={{ width: '100%' }}>
+              <Typography.Text><Typography.Text strong>Name:</Typography.Text> {device.name || 'Unnamed'}</Typography.Text>
+              <Typography.Text><Typography.Text strong>Room:</Typography.Text> {device.roomName || 'Unassigned'}</Typography.Text>
+              <Typography.Text><Typography.Text strong>Status:</Typography.Text> {conn.online ? 'Connected' : 'Disconnected'} (last seen {conn.text})</Typography.Text>
+              <Button onClick={() => setEditingDetails(true)}>Edit</Button>
+            </Space>
+          ) : (
+            <Space direction="vertical" size={12} style={{ width: '100%' }}>
+              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Device name" />
+              <Select
+                value={roomId}
+                options={rooms.map((r) => ({ value: r.id, label: r.name }))}
+                placeholder="Select room"
+                onChange={(v) => setRoomId(v)}
+              />
+              <Space>
+                <Button type="primary" onClick={saveDeviceDetails}>Save details</Button>
+                <Button onClick={cancelEditDetails}>Cancel</Button>
+              </Space>
+            </Space>
+          )}
         </Card>
 
         <Space>

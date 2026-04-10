@@ -117,6 +117,35 @@ def on_message(topic, msg):
         sys.print_exception(e)
 
 
+def connect_mqtt(mac, brokers, cmd_topic):
+    attempts = 0
+    while True:
+        attempts += 1
+        if not network.WLAN(network.STA_IF).isconnected():
+            log("WiFi disconnected, reconnecting")
+            connect_wifi()
+        for broker in brokers:
+            client = None
+            try:
+                log("Connecting MQTT attempt " + str(attempts) + " broker=" + broker)
+                client = MQTTClient(client_id=mac, server=broker, port=MQTT_PORT)
+                client.set_callback(on_message)
+                client.connect(clean_session=True)
+                client.subscribe(cmd_topic, qos=1)
+                log("Connected to MQTT broker=" + broker)
+                log("Subscribed to command topic (QoS 1)")
+                return client
+            except Exception as e:
+                print("[pico] mqtt connect error", e)
+                try:
+                    if client is not None:
+                        client.disconnect()
+                except Exception:
+                    pass
+                gc.collect()
+        time.sleep(2)
+
+
 def main():
     log("Booting Pico LED firmware")
     log("Config MQTT broker=" + MQTT_BROKER + ":" + str(MQTT_PORT) + " pixelPin=" + str(PIXEL_PIN) + " pixelCount=" + str(PIXEL_COUNT))
@@ -133,37 +162,12 @@ def main():
         if short_host:
             brokers.append(short_host)
 
-    client = None
-    connected = False
-    attempts = 0
-    while not connected:
-        attempts += 1
-        for broker in brokers:
-            try:
-                log("Connecting MQTT attempt " + str(attempts) + " broker=" + broker)
-                client = MQTTClient(client_id=mac, server=broker, port=MQTT_PORT)
-                client.set_callback(on_message)
-                client.connect(clean_session=True)
-                connected = True
-                log("Connected to MQTT broker=" + broker)
-                break
-            except Exception as e:
-                print("[pico] mqtt connect error", e)
-                client = None
-                gc.collect()
-        if not connected:
-            time.sleep(2)
-
-    if client is None:
-        raise RuntimeError("MQTT client unavailable after connect loop")
-
-    client.subscribe(cmd_topic, qos=1)
-    log("Subscribed to command topic (QoS 1)")
+    client = connect_mqtt(mac, brokers, cmd_topic)
 
     apply_led()
 
     publish_count = 0
-    publish_interval_ms = 8000
+    publish_interval_ms = 5000
     last_publish_ms = time.ticks_ms() - publish_interval_ms
     while True:
         try:
@@ -178,6 +182,14 @@ def main():
         except Exception as e:
             print("[pico] mqtt loop error", e)
             sys.print_exception(e)
+            try:
+                client.disconnect()
+            except Exception:
+                pass
+            client = None
+            gc.collect()
+            client = connect_mqtt(mac, brokers, cmd_topic)
+            last_publish_ms = time.ticks_ms() - publish_interval_ms
         time.sleep_ms(25)
 
 
